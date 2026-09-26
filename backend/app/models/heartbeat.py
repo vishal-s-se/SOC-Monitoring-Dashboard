@@ -1,7 +1,7 @@
 from sqlalchemy import Column, String, DateTime, func, Integer, ForeignKey
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import JSONB
-from app.db.base_class import Base
+from backend.app.db.base_class import Base
 
 class Heartbeat(Base):
     id = Column(Integer, primary_key=True, index=True)

@@ -57,5 +57,5 @@ async def db_health_check(db: AsyncSession = Depends(get_db)):
         )
 
 # Future API router inclusion placeholder
-# from app.api.v1.api import api_router
+# from backend.app.api.v1.api import api_router
 # app.include_router(api_router, prefix=settings.API_V1_STR)

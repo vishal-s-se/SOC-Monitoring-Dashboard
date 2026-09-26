@@ -4,18 +4,28 @@ import uuid
 import datetime
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy import text
-from app.models.host import Host
-from app.models.agent import Agent
-from app.models.raw_log import RawLog
-from app.models.event import Event
-from app.models.heartbeat import Heartbeat
-from app.db.base_class import Base
-from app.core.config import settings
+from backend.app.models.host import Host
+from backend.app.models.agent import Agent
+from backend.app.models.raw_log import RawLog
+from backend.app.models.event import Event
+from backend.app.models.heartbeat import Heartbeat
+from backend.app.db.base_class import Base
+from backend.app.core.config import settings
 
 from sqlalchemy.pool import NullPool
 
+import os
+from dotenv import load_dotenv
+
+load_dotenv(".env.test")
+
 # Test DB settings
-TEST_DATABASE_URL = settings.DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://")
+TEST_DATABASE_URL = os.getenv(
+    "TEST_DATABASE_URL", 
+    settings.DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://")
+)
+if "soc_monitor_test" not in TEST_DATABASE_URL:
+    TEST_DATABASE_URL = TEST_DATABASE_URL.replace("soc_monitor", "soc_monitor_test")
 
 engine = create_async_engine(TEST_DATABASE_URL, poolclass=NullPool, echo=False)
 TestingSessionLocal = async_sessionmaker(autocommit=False, autoflush=False, bind=engine, class_=AsyncSession, expire_on_commit=False)

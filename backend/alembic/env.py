@@ -7,9 +7,9 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
 
-from app.core.config import settings
-from app.db.base_class import Base
-from app.models import *  # This will import all models to register with Base
+from backend.app.core.config import settings
+from backend.app.db.base_class import Base
+from backend.app.models import *  # This will import all models to register with Base
 
 config = context.config
 
