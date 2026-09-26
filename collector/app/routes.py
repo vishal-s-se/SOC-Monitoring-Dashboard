@@ -105,6 +105,8 @@ async def receive_heartbeat(
     
     return {"status": "ok"}
 
+from collector.app.pipeline import process_event
+
 @router.post("/events", status_code=status.HTTP_202_ACCEPTED)
 async def receive_event(
     event_req: EventRequest,
@@ -121,22 +123,4 @@ async def receive_event(
             detail="Agent not found. Please register first."
         )
         
-    # Queue / DB Persistence
-    raw_log = RawLog(
-        event_identifier=event_req.event_id,
-        host_id=agent.host_id,
-        agent_id=agent.id,
-        source_type=event_req.source,
-        timestamp=event_req.timestamp,
-        raw_payload=event_req.payload,
-        metadata_=event_req.metadata_,
-        ingestion_status="PENDING"
-    )
-    db.add(raw_log)
-    try:
-        await db.commit()
-    except Exception as e:
-        await db.rollback()
-        raise HTTPException(status_code=400, detail="Event already exists or invalid data")
-        
-    return {"status": "ok", "message": "Event queued"}
+    return await process_event(event_req, agent, db)

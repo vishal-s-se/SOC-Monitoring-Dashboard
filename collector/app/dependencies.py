@@ -6,11 +6,6 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-# Add backend to sys.path so backend's "from app..." works
-backend_path = os.path.join(project_root, "backend")
-if backend_path not in sys.path:
-    sys.path.insert(1, backend_path)
-
 from fastapi import Depends, HTTPException, Security, status
 from fastapi.security import APIKeyHeader
 from sqlalchemy.ext.asyncio import AsyncSession
