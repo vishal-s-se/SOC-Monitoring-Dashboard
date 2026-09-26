@@ -56,6 +56,9 @@ async def db_health_check(db: AsyncSession = Depends(get_db)):
             content={"status": "error", "service": "database", "detail": "Database unavailable"}
         )
 
+from backend.app.api.alerts import router as alerts_router
+app.include_router(alerts_router, prefix=settings.API_V1_STR)
+
 # Future API router inclusion placeholder
 # from backend.app.api.v1.api import api_router
 # app.include_router(api_router, prefix=settings.API_V1_STR)

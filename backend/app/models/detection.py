@@ -37,8 +37,10 @@ class DetectionResult(Base):
     timestamp = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     status = Column(String, default="NEW") # NEW, PROCESSED
     
+    alert_id = Column(Integer, ForeignKey("alert.id"), nullable=True)
     metadata_ = Column("metadata", JSONB, nullable=True)
     
     # Relationships
     event = relationship("Event")
     rule = relationship("DetectionRule", back_populates="results")
+    alert = relationship("Alert", back_populates="detection_results")
