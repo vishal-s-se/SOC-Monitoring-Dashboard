@@ -1,8 +1,11 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text
 from .core.config import settings
 from .core.logging import logger
+from .db.session import get_db
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -40,6 +43,18 @@ def health_check():
         "status": "ok",
         "service": "soc-monitor-backend"
     }
+
+@app.get("/health/db")
+async def db_health_check(db: AsyncSession = Depends(get_db)):
+    try:
+        await db.execute(text("SELECT 1"))
+        return {"status": "ok", "service": "database"}
+    except Exception as e:
+        logger.error(f"Database health check failed: {e}")
+        return JSONResponse(
+            status_code=503,
+            content={"status": "error", "service": "database", "detail": "Database unavailable"}
+        )
 
 # Future API router inclusion placeholder
 # from app.api.v1.api import api_router

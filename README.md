@@ -5,23 +5,23 @@ A lightweight, real-time Security Operations Center monitoring platform.
 ## Project Purpose
 This platform aims to provide a modular, practical security monitoring solution capable of endpoint monitoring, event normalization, detection, and alerting across both Windows and Linux systems.
 
-## Current Phase: Phase 1 (Foundation & Architecture)
-This repository currently contains the Phase 1 implementation. It establishes:
+## Current Phase: Phase 2 (Database & Core Backend)
+This repository currently contains the Phase 2 implementation. It establishes:
+- PostgreSQL database integration
+- SQLAlchemy ORM and Alembic migrations
+- Core entities (Hosts, Agents, Raw Logs, Events, Heartbeats)
+- Database health checks and connection management
 - Monorepo project structure
-- Technology stack decisions
-- Backend and Frontend skeletons
 - Configuration system
-- Docker development foundation
-- Basic testing and logging
 
-**Limitations:** The current phase does NOT include actual telemetry collection, detection rules, database schemas, or full UI functionality. These are planned for future phases.
+**Limitations:** The current phase does NOT include actual telemetry collection, detection rules, or full UI functionality. These are planned for future phases.
 
 ## Technology Stack
 - **Frontend**: Next.js, React, TypeScript, Tailwind CSS
-- **Backend**: Python, FastAPI, Pydantic
-- **Database**: PostgreSQL (Planned)
+- **Backend**: Python, FastAPI, Pydantic, SQLAlchemy, Alembic
+- **Database**: PostgreSQL
 - **Queue/Cache**: Redis (Planned)
-- **Containerization**: Planned for Phase 9 (Currently Local Native)
+- **Containerization**: Local Native (Docker planned for Phase 9)
 
 ## Repository Structure
 - `/backend`: FastAPI backend application.
@@ -38,7 +38,16 @@ This project runs directly on the host machine for development. You will need No
    ```bash
    cp .env.example .env
    ```
-2. Start the Backend:
+2. Start the Database:
+   - Ensure PostgreSQL is installed and running locally on port 5432.
+   - Update `DATABASE_URL` in `.env` if necessary.
+
+3. Run Database Migrations:
+   ```bash
+   .\backend\venv\Scripts\alembic.exe upgrade head
+   ```
+
+4. Start the Backend:
    ```bash
    cd backend
    python -m venv venv
@@ -56,17 +65,18 @@ This project runs directly on the host machine for development. You will need No
    - Frontend: `http://localhost:3000`
    - Backend API: `http://localhost:8000`
    - Backend Health: `http://localhost:8000/health`
+   - Database Health: `http://localhost:8000/health/db`
    - Collector API: `http://localhost:5000` (When running)
 
 ## Testing
-Run backend tests (requires Python environment):
+Run backend tests (requires Python environment and local PostgreSQL):
 ```bash
 cd backend
 pip install -r requirements.txt
-pytest
+pytest tests/test_db.py -v
 ```
 
 ## Future Phases
-- Phase 2: Database schema, authentication, agent registration.
-- Phase 3: Telemetry ingestion, real-time event streaming.
+- Phase 3: Telemetry ingestion, real-time event streaming (Agent & Collector).
 - Phase 4: Detection engine, alerting, MITRE ATT&CK mapping.
+- Phase 5: Incident response and investigation workflows.

@@ -4,3 +4,8 @@ pydantic==2.5.2
 pydantic-settings==2.1.0
 httpx==0.25.2
 pytest==7.4.3
+sqlalchemy
+alembic
+asyncpg
+greenlet
+pytest-asyncio
