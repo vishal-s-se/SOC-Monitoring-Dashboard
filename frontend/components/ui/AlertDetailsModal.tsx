@@ -1,4 +1,5 @@
 import { useState } from "react"
+import Link from "next/link"
 import { SeverityBadge } from "./SeverityBadge"
 import { StatusBadge } from "./StatusBadge"
 import { AddToInvestigationModal } from "./AddToInvestigationModal"
@@ -21,6 +22,13 @@ export function AlertDetailsModal({ alert, onClose }: Props) {
           <div className="flex items-center space-x-3">
             <SeverityBadge severity={alert.severity} />
             <h3 className="text-lg font-semibold text-white">{alert.title}</h3>
+            <Link
+              href={`/attack-timeline?alert_id=${alert.id || alert.alert_id}`}
+              onClick={onClose}
+              className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1 rounded transition-colors"
+            >
+              View Timeline
+            </Link>
             <button
               onClick={() => setShowInvestigateModal(true)}
               className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded"

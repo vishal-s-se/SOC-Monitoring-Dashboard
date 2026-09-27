@@ -231,6 +231,12 @@ export default function InvestigationDetailPage() {
           <h1 className="text-2xl font-bold text-white truncate">{inv.title}</h1>
         </div>
         <div className="flex items-center space-x-2 shrink-0">
+          <Link
+            href={`/attack-timeline?investigation_id=${inv.id}`}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-3 py-2 rounded-lg transition-colors flex items-center space-x-1"
+          >
+            <span>Timeline</span>
+          </Link>
           <SeverityBadge severity={inv.severity} />
           <select
             value={status}

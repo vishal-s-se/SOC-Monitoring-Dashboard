@@ -397,3 +397,82 @@ async def test_investigation_note_validation(client: AsyncClient):
     })
     assert valid_resp.status_code == 201
     assert valid_resp.json()["content"] == "Valid note content"
+
+@pytest.mark.asyncio
+async def test_attack_timeline_api(client: AsyncClient, sample_data):
+    # 1. General Timeline list
+    res = await client.get("/api/v1/attack-timeline/")
+    assert res.status_code == 200
+    data = res.json()
+    assert "items" in data
+    assert "total" in data
+    assert data["total"] >= 1
+    item = data["items"][0]
+    assert "event_id" in item
+    assert "timestamp" in item
+    assert "severity" in item
+
+    # 2. Ordering asc vs desc
+    res_desc = await client.get("/api/v1/attack-timeline/?order=desc")
+    assert res_desc.status_code == 200
+    res_asc = await client.get("/api/v1/attack-timeline/?order=asc")
+    assert res_asc.status_code == 200
+    assert len(res_desc.json()["items"]) == len(res_asc.json()["items"])
+
+    # 3. Filters: hostname, agent_id, severity, event_category, search
+    host_filter = await client.get("/api/v1/attack-timeline/?hostname=api-host")
+    assert host_filter.status_code == 200
+    assert len(host_filter.json()["items"]) >= 1
+
+    agent_filter = await client.get(f"/api/v1/attack-timeline/?agent_id={sample_data['agent'].id}")
+    assert agent_filter.status_code == 200
+    assert len(agent_filter.json()["items"]) >= 1
+
+    search_filter = await client.get("/api/v1/attack-timeline/?search=api-host")
+    assert search_filter.status_code == 200
+    assert len(search_filter.json()["items"]) >= 1
+
+    empty_filter = await client.get("/api/v1/attack-timeline/?hostname=nonexistent-host-xyz")
+    assert empty_filter.status_code == 200
+    assert empty_filter.json()["total"] == 0
+
+    # 4. Invalid time range
+    invalid_time = await client.get("/api/v1/attack-timeline/?start_time=2026-01-02T00:00:00Z&end_time=2026-01-01T00:00:00Z")
+    assert invalid_time.status_code == 400
+
+    # 5. Alert context timeline
+    alert = sample_data["alert"]
+    alert_timeline = await client.get(f"/api/v1/attack-timeline/?alert_id={alert.id}")
+    assert alert_timeline.status_code == 200
+    assert alert_timeline.json()["total"] >= 1
+    # Check trigger context
+    items = alert_timeline.json()["items"]
+    assert any(i.get("context_type") in ["ALERT_TRIGGER", "SURROUNDING_CONTEXT"] for i in items)
+
+    # 6. Alert not found
+    alert_nf = await client.get("/api/v1/attack-timeline/?alert_id=999999")
+    assert alert_nf.status_code == 404
+
+    # 7. Investigation context timeline
+    create_inv = await client.post("/api/v1/investigations/", json={
+        "title": "Timeline Investigation",
+        "severity": "HIGH",
+        "evidence": [
+            {
+                "evidence_type": "EVENT",
+                "reference_id": str(sample_data["event"].id)
+            }
+        ]
+    })
+    inv_id = create_inv.json()["id"]
+
+    inv_timeline = await client.get(f"/api/v1/attack-timeline/?investigation_id={inv_id}")
+    assert inv_timeline.status_code == 200
+    assert inv_timeline.json()["total"] >= 1
+    inv_items = inv_timeline.json()["items"]
+    direct_items = [i for i in inv_items if i.get("context_type") == "DIRECT_EVIDENCE"]
+    assert len(direct_items) >= 1
+
+    # 8. Investigation not found
+    inv_nf = await client.get("/api/v1/attack-timeline/?investigation_id=999999")
+    assert inv_nf.status_code == 404
