@@ -15,6 +15,11 @@ from backend.app.schemas.investigation import (
     InvestigationNote as NoteSchema, InvestigationNoteCreate, InvestigationSummary
 )
 from backend.app.schemas.pagination import PaginatedResponse
+from backend.app.models.alert import Alert as AlertModel
+from backend.app.models.event import Event as EventModel
+from backend.app.models.raw_log import RawLog as RawLogModel
+from backend.app.models.host import Host as HostModel
+from backend.app.models.agent import Agent as AgentModel
 # Assuming a real-time event publisher exists, we'll try to use it if available
 try:
     from backend.app.api.v1.endpoints.websockets import manager
@@ -249,3 +254,171 @@ async def add_note(id: int, note_in: InvestigationNoteCreate, db: AsyncSession =
         pass
 
     return db_note
+
+@router.get("/{id}/context")
+async def get_investigation_context(id: int, db: AsyncSession = Depends(get_db)):
+    stmt = select(InvestigationModel).options(selectinload(InvestigationModel.evidence)).where(InvestigationModel.id == id)
+    result = await db.execute(stmt)
+    inv = result.scalars().first()
+    if not inv:
+        raise HTTPException(status_code=404, detail="Investigation not found")
+
+    context: dict = {
+        "alerts": [],
+        "events": [],
+        "raw_logs": [],
+        "hosts": [],
+        "agents": []
+    }
+
+    # Helper: find evidence_id for a given type+reference
+    def _ev_id(ev_type: str, ref_id: str) -> int:
+        for e in inv.evidence:
+            if e.evidence_type == ev_type and e.reference_id == str(ref_id):
+                return e.id
+        return 0
+
+    # Collect integer IDs per type (skip non-numeric reference_ids gracefully)
+    def _ids(ev_type: str) -> list:
+        return [int(e.reference_id) for e in inv.evidence if e.evidence_type == ev_type and e.reference_id.isdigit()]
+
+    alert_ids = _ids("ALERT")
+    event_ids = _ids("EVENT")
+    raw_log_ids = _ids("RAW_LOG")
+    host_ids = _ids("HOST")
+    agent_ids = _ids("AGENT")
+
+    # Fetch & serialize alerts
+    if alert_ids:
+        res = await db.execute(select(AlertModel).where(AlertModel.id.in_(alert_ids)))
+        for a in res.scalars().all():
+            context["alerts"].append({
+                "evidence_id": _ev_id("ALERT", str(a.id)),
+                "data": {
+                    "id": a.id,
+                    "alert_id": a.alert_id,
+                    "title": a.title,
+                    "description": a.description,
+                    "severity": a.severity,
+                    "status": a.status,
+                    "first_seen": a.first_seen.isoformat() if a.first_seen else None,
+                    "last_seen": a.last_seen.isoformat() if a.last_seen else None,
+                    "occurrence_count": a.occurrence_count,
+                    "rule_id": a.rule_id,
+                    "agent_id": a.agent_id,
+                    "host_id": a.host_id,
+                    "metadata_": a.metadata_
+                }
+            })
+
+    # Fetch & serialize events
+    if event_ids:
+        res = await db.execute(select(EventModel).where(EventModel.id.in_(event_ids)))
+        for a in res.scalars().all():
+            context["events"].append({
+                "evidence_id": _ev_id("EVENT", str(a.id)),
+                "data": {
+                    "id": a.id,
+                    "event_id": a.event_id,
+                    "timestamp": a.timestamp.isoformat() if a.timestamp else None,
+                    "hostname": a.hostname,
+                    "operating_system": a.operating_system,
+                    "source_type": a.source_type,
+                    "event_category": a.event_category,
+                    "event_type": a.event_type,
+                    "username": a.username,
+                    "source_ip": a.source_ip,
+                    "destination_ip": a.destination_ip,
+                    "source_port": a.source_port,
+                    "destination_port": a.destination_port,
+                    "protocol": a.protocol,
+                    "action": a.action,
+                    "severity": a.severity,
+                    "raw_log_id": a.raw_log_id,
+                    "host_id": a.host_id,
+                    "agent_id": a.agent_id,
+                    "metadata_": a.metadata_
+                }
+            })
+
+    # Fetch & serialize raw logs
+    if raw_log_ids:
+        res = await db.execute(select(RawLogModel).where(RawLogModel.id.in_(raw_log_ids)))
+        for a in res.scalars().all():
+            context["raw_logs"].append({
+                "evidence_id": _ev_id("RAW_LOG", str(a.id)),
+                "data": {
+                    "id": a.id,
+                    "event_identifier": a.event_identifier,
+                    "source_type": a.source_type,
+                    "source_name": a.source_name,
+                    "timestamp": a.timestamp.isoformat() if a.timestamp else None,
+                    "received_at": a.received_at.isoformat() if a.received_at else None,
+                    "raw_payload": a.raw_payload,
+                    "host_id": a.host_id,
+                    "agent_id": a.agent_id,
+                    "ingestion_status": a.ingestion_status,
+                    "metadata_": a.metadata_
+                }
+            })
+
+    # Fetch & serialize hosts
+    if host_ids:
+        res = await db.execute(select(HostModel).where(HostModel.id.in_(host_ids)))
+        for a in res.scalars().all():
+            context["hosts"].append({
+                "evidence_id": _ev_id("HOST", str(a.id)),
+                "data": {
+                    "id": a.id,
+                    "host_identifier": a.host_identifier,
+                    "hostname": a.hostname,
+                    "operating_system": a.operating_system,
+                    "os_version": a.os_version,
+                    "ip_address": a.ip_address,
+                    "status": a.status,
+                    "last_seen": a.last_seen.isoformat() if a.last_seen else None,
+                    "created_at": a.created_at.isoformat() if a.created_at else None
+                }
+            })
+
+    # Fetch & serialize agents
+    if agent_ids:
+        res = await db.execute(select(AgentModel).where(AgentModel.id.in_(agent_ids)))
+        for a in res.scalars().all():
+            context["agents"].append({
+                "evidence_id": _ev_id("AGENT", str(a.id)),
+                "data": {
+                    "id": a.id,
+                    "agent_id": a.agent_id,
+                    "hostname": a.hostname,
+                    "operating_system": a.operating_system,
+                    "agent_version": a.agent_version,
+                    "status": a.status,
+                    "last_seen": a.last_seen.isoformat() if a.last_seen else None,
+                    "last_heartbeat": a.last_heartbeat.isoformat() if a.last_heartbeat else None,
+                    "ip_address": a.ip_address,
+                    "host_id": a.host_id
+                }
+            })
+
+    return context
+
+
+@router.delete("/{id}/evidence/{evidence_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_evidence(id: int, evidence_id: int, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(InvestigationEvidence).where(
+        InvestigationEvidence.id == evidence_id,
+        InvestigationEvidence.investigation_id == id
+    ))
+    ev = result.scalars().first()
+    if not ev:
+        raise HTTPException(status_code=404, detail="Evidence not found")
+
+    await db.delete(ev)
+    await db.commit()
+
+    try:
+        await publish_event("investigation_evidence_removed", {"id": id, "evidence_id": evidence_id})
+    except Exception:
+        pass
+    return None
