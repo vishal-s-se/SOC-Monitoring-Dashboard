@@ -23,6 +23,10 @@ async def list_events(
     event_category: Optional[str] = None,
     event_type: Optional[str] = None,
     severity: Optional[str] = None,
+    action: Optional[str] = None,
+    protocol: Optional[str] = None,
+    source_ip: Optional[str] = None,
+    destination_ip: Optional[str] = None,
     search: Optional[str] = None,
     start_time: Optional[datetime] = None,
     end_time: Optional[datetime] = None,
@@ -46,6 +50,14 @@ async def list_events(
         stmt = stmt.where(EventModel.event_type == event_type)
     if severity:
         stmt = stmt.where(EventModel.severity == severity)
+    if action:
+        stmt = stmt.where(func.lower(EventModel.action) == action.lower())
+    if protocol:
+        stmt = stmt.where(func.lower(EventModel.protocol) == protocol.lower())
+    if source_ip:
+        stmt = stmt.where(EventModel.source_ip == source_ip)
+    if destination_ip:
+        stmt = stmt.where(EventModel.destination_ip == destination_ip)
     if search:
         search_term = f"%{search}%"
         stmt = stmt.where(or_(

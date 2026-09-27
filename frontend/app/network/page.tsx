@@ -1,14 +1,184 @@
 "use client"
-import { PageHeader, EmptyState } from '@/components/ui/States'
 
-export default function PlaceholderPage() {
+import { useEffect, useState, useCallback } from 'react'
+import { api } from '@/lib/api'
+import { Card, CardContent } from '@/components/ui/Card'
+import { PageHeader, LoadingState, ErrorState, EmptyState } from '@/components/ui/States'
+import { DataTable } from '@/components/ui/DataTable'
+import { useWebSocket } from '@/hooks/useWebSocket'
+import { SeverityBadge } from '@/components/ui/SeverityBadge'
+import { FilterBar, FilterInput, FilterSelect } from '@/components/ui/FilterBar'
+import { Pagination } from '@/components/ui/Pagination'
+import { EventDetailsModal } from '@/components/ui/EventDetailsModal'
+
+export default function NetworkPage() {
+  const [events, setEvents] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState("")
+  const [total, setTotal] = useState(0)
+
+  // Pagination
+  const [page, setPage] = useState(1)
+  const pageSize = 50
+
+  // Filters
+  const [search, setSearch] = useState("")
+  const [protocol, setProtocol] = useState("")
+  const [eventType, setEventType] = useState("")
+
+  // Debounced search
+  const [debouncedSearch, setDebouncedSearch] = useState("")
+
+  // Modal
+  const [selectedEvent, setSelectedEvent] = useState<any | null>(null)
+
+  const { lastMessage } = useWebSocket()
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(search)
+      setPage(1)
+    }, 500)
+    return () => clearTimeout(handler)
+  }, [search])
+
+  const loadData = useCallback(async () => {
+    try {
+      setLoading(true)
+      const res = await api.get<any>('/events', {
+        page,
+        page_size: pageSize,
+        event_category: 'network',
+        event_type: eventType || undefined,
+        protocol: protocol || undefined,
+        search: debouncedSearch || undefined
+      })
+      setEvents(res.items || [])
+      setTotal(res.total || 0)
+      setError("")
+    } catch (err: any) {
+      setError(err.message || "Failed to load Network events")
+    } finally {
+      setLoading(false)
+    }
+  }, [page, pageSize, eventType, protocol, debouncedSearch])
+
+  useEffect(() => {
+    loadData()
+  }, [loadData])
+
+  useEffect(() => {
+    if (lastMessage && lastMessage.type === 'new_event') {
+      const newEvent = lastMessage.data
+
+      // Only process if it matches our criteria
+      if (newEvent.event_category?.toLowerCase() === 'network') {
+        if (eventType && newEvent.event_type !== eventType) return
+        if (protocol && newEvent.protocol?.toLowerCase() !== protocol.toLowerCase()) return
+
+        // Add to list if we are on the first page
+        if (page === 1) {
+          setEvents(prev => {
+            if (prev.find(e => e.event_id === newEvent.event_id)) return prev
+            const updated = [newEvent, ...prev]
+            if (updated.length > pageSize) updated.pop()
+            return updated
+          })
+          setTotal(t => t + 1)
+        } else {
+          setTotal(t => t + 1)
+        }
+      }
+    }
+  }, [lastMessage, page, eventType, protocol])
+
   return (
     <div className="space-y-6">
-      <PageHeader title="network" />
-      <EmptyState
-        title="Coming Soon"
-        description="This module is planned for a future phase and is not yet implemented."
+      <PageHeader
+        title="Network Events"
+        description="Monitor network connections, DNS, and traffic"
       />
+
+      <FilterBar>
+        <div className="flex-1">
+          <FilterInput
+            label="Search IPs/Host"
+            value={search}
+            onChange={setSearch}
+            placeholder="Search IP, Hostname..."
+          />
+        </div>
+        <div className="w-48">
+          <FilterSelect
+            label="Event Type"
+            value={eventType}
+            onChange={(val) => { setEventType(val); setPage(1); }}
+            options={[
+              { value: 'network connection', label: 'Connection' },
+              { value: 'DNS', label: 'DNS' },
+              { value: 'inbound connection', label: 'Inbound' },
+              { value: 'outbound connection', label: 'Outbound' }
+            ]}
+          />
+        </div>
+        <div className="w-48">
+          <FilterSelect
+            label="Protocol"
+            value={protocol}
+            onChange={(val) => { setProtocol(val); setPage(1); }}
+            options={[
+              { value: 'TCP', label: 'TCP' },
+              { value: 'UDP', label: 'UDP' },
+              { value: 'ICMP', label: 'ICMP' }
+            ]}
+          />
+        </div>
+      </FilterBar>
+
+      {error ? (
+        <ErrorState message={error} retry={loadData} />
+      ) : loading && events.length === 0 ? (
+        <LoadingState message="Loading Network events..." />
+      ) : events.length === 0 ? (
+        <EmptyState
+          title="No network events found"
+          description="Adjust your filters or wait for new telemetry."
+        />
+      ) : (
+        <Card>
+          <CardContent className="p-0 overflow-x-auto">
+            <DataTable
+              data={events}
+              keyExtractor={(r) => r.event_id}
+              onRowClick={setSelectedEvent}
+              columns={[
+                { key: 'timestamp', title: 'Time', render: (r) => new Date(r.timestamp).toLocaleString() },
+                { key: 'event_type', title: 'Type', render: (r) => <span className="font-medium text-gray-200">{r.event_type || 'N/A'}</span> },
+                { key: 'protocol', title: 'Proto', render: (r) => r.protocol || 'N/A' },
+                { key: 'source_ip', title: 'Source IP', render: (r) => r.source_ip || 'N/A' },
+                { key: 'source_port', title: 'S.Port', render: (r) => r.source_port || 'N/A' },
+                { key: 'destination_ip', title: 'Dest IP', render: (r) => r.destination_ip || 'N/A' },
+                { key: 'destination_port', title: 'D.Port', render: (r) => r.destination_port || 'N/A' },
+                { key: 'hostname', title: 'Host', render: (r) => r.hostname || 'N/A' },
+                { key: 'severity', title: 'Severity', render: (r) => <SeverityBadge severity={r.severity || 'INFO'} /> }
+              ]}
+            />
+            <Pagination
+              currentPage={page}
+              pageSize={pageSize}
+              total={total}
+              onPageChange={setPage}
+            />
+          </CardContent>
+        </Card>
+      )}
+
+      {selectedEvent && (
+        <EventDetailsModal
+          event={selectedEvent}
+          onClose={() => setSelectedEvent(null)}
+        />
+      )}
     </div>
   )
 }
