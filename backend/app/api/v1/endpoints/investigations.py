@@ -68,7 +68,8 @@ async def create_investigation(
     # Reload with relations
     stmt = select(InvestigationModel).options(
         selectinload(InvestigationModel.evidence),
-        selectinload(InvestigationModel.notes)
+        selectinload(InvestigationModel.notes),
+        selectinload(InvestigationModel.history)
     ).where(InvestigationModel.id == db_obj.id)
     result = await db.execute(stmt)
     full_inv = result.scalar_one()
@@ -136,7 +137,8 @@ async def list_investigations(
 async def get_investigation(id: int, db: AsyncSession = Depends(get_db)):
     stmt = select(InvestigationModel).options(
         selectinload(InvestigationModel.evidence),
-        selectinload(InvestigationModel.notes)
+        selectinload(InvestigationModel.notes),
+        selectinload(InvestigationModel.history)
     ).where(InvestigationModel.id == id)
     result = await db.execute(stmt)
     inv = result.scalars().first()
@@ -148,19 +150,31 @@ async def get_investigation(id: int, db: AsyncSession = Depends(get_db)):
 async def update_investigation(id: int, inv_in: InvestigationUpdate, db: AsyncSession = Depends(get_db)):
     stmt = select(InvestigationModel).options(
         selectinload(InvestigationModel.evidence),
-        selectinload(InvestigationModel.notes)
+        selectinload(InvestigationModel.notes),
+        selectinload(InvestigationModel.history)
     ).where(InvestigationModel.id == id)
     result = await db.execute(stmt)
     inv = result.scalars().first()
     if not inv:
         raise HTTPException(status_code=404, detail="Investigation not found")
 
+    prev_status = inv.status
     update_data = inv_in.dict(exclude_unset=True)
     for field, value in update_data.items():
         if field in ['status', 'severity'] and value is not None:
             setattr(inv, field, value.value)
         else:
             setattr(inv, field, value)
+
+    if prev_status != inv.status:
+        from backend.app.models.investigation import InvestigationHistory
+        hist = InvestigationHistory(
+            investigation_id=inv.id,
+            previous_status=prev_status,
+            new_status=inv.status,
+            reason=update_data.get('resolution')
+        )
+        db.add(hist)
 
     await db.commit()
     await db.refresh(inv)
@@ -176,16 +190,29 @@ async def update_investigation(id: int, inv_in: InvestigationUpdate, db: AsyncSe
 async def update_status(id: int, status_in: InvestigationStatusUpdate, db: AsyncSession = Depends(get_db)):
     stmt = select(InvestigationModel).options(
         selectinload(InvestigationModel.evidence),
-        selectinload(InvestigationModel.notes)
+        selectinload(InvestigationModel.notes),
+        selectinload(InvestigationModel.history)
     ).where(InvestigationModel.id == id)
     result = await db.execute(stmt)
     inv = result.scalars().first()
     if not inv:
         raise HTTPException(status_code=404, detail="Investigation not found")
 
+    prev_status = inv.status
     inv.status = status_in.status.value
     if status_in.resolution is not None:
         inv.resolution = status_in.resolution
+
+    # Record history
+    if prev_status != inv.status:
+        from backend.app.models.investigation import InvestigationHistory
+        hist = InvestigationHistory(
+            investigation_id=inv.id,
+            previous_status=prev_status,
+            new_status=inv.status,
+            reason=status_in.resolution
+        )
+        db.add(hist)
 
     await db.commit()
     await db.refresh(inv)

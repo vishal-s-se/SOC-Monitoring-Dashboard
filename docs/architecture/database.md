@@ -32,7 +32,7 @@ HOST
 - **Metadata**: Uses PostgreSQL `JSONB` for arbitrary telemetry context without schema changes.
 
 ## Raw Log vs Normalized Event Distinction
-To preserve source evidence, `RawLog` stores the exact payload string received from the collector. 
+To preserve source evidence, `RawLog` stores the exact payload string received from the collector.
 `Event` is derived from `RawLog` during normalization, enabling rich indexing and standard SOC queries.
 
 ## Indexing Strategy

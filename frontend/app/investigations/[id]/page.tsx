@@ -31,6 +31,15 @@ export default function InvestigationDetailPage() {
   const [status, setStatus] = useState("")
   const [updatingStatus, setUpdatingStatus] = useState(false)
 
+  // Resolution Modal
+  const [showResModal, setShowResModal] = useState(false)
+  const [pendingStatus, setPendingStatus] = useState("")
+  const [resolutionText, setResolutionText] = useState("")
+
+  // Assignment Modal
+  const [showAssignModal, setShowAssignModal] = useState(false)
+  const [assignee, setAssignee] = useState("")
+
   // Modals
   const [viewEvent, setViewEvent] = useState<any>(null)
   const [viewAlert, setViewAlert] = useState<any>(null)
@@ -121,13 +130,25 @@ export default function InvestigationDetailPage() {
     }
   }
 
-  const handleStatusChange = async (newStatus: string) => {
+  const handleStatusSelect = (newStatus: string) => {
+    if (newStatus === 'RESOLVED' || newStatus === 'CLOSED') {
+      setPendingStatus(newStatus)
+      setResolutionText(inv.resolution || "")
+      setShowResModal(true)
+    } else {
+      updateStatusAPI(newStatus)
+    }
+  }
+
+  const updateStatusAPI = async (newStatus: string, resText?: string) => {
     try {
       setUpdatingStatus(true)
       await api.post(`/investigations/${id}/status`, {
-        status: newStatus
+        status: newStatus,
+        resolution: resText
       })
       setStatus(newStatus)
+      setShowResModal(false)
       loadData()
     } catch (err: any) {
       alert("Failed to update status: " + err.message)
@@ -136,8 +157,20 @@ export default function InvestigationDetailPage() {
     }
   }
 
+  const handleAssign = async () => {
+    try {
+      await api.patch(`/investigations/${id}`, {
+        assigned_to: assignee || null
+      })
+      setShowAssignModal(false)
+      loadData()
+    } catch (err: any) {
+      alert("Failed to assign: " + err.message)
+    }
+  }
+
   const removeEvidence = async (evidenceId: number) => {
-    if (!confirm("Are you sure you want to remove this evidence?")) return
+    if (!confirm("Remove this evidence from the investigation?\n\nThe underlying event will not be deleted.")) return
     try {
       await api.delete(`/investigations/${id}/evidence/${evidenceId}`)
       if (currentEvidenceId === evidenceId) {
@@ -191,7 +224,7 @@ export default function InvestigationDetailPage() {
           <SeverityBadge severity={inv.severity} />
           <select
             value={status}
-            onChange={e => handleStatusChange(e.target.value)}
+            onChange={e => handleStatusSelect(e.target.value)}
             disabled={updatingStatus}
             className="bg-[#151518] border border-gray-800 rounded-lg p-2 text-white text-sm"
           >
@@ -225,7 +258,10 @@ export default function InvestigationDetailPage() {
                   <p className="text-sm text-gray-300 mt-1">{new Date(inv.updated_at).toLocaleString()}</p>
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500 uppercase font-semibold">Assigned To</label>
+                  <label className="text-xs text-gray-500 uppercase font-semibold flex justify-between items-center">
+                    Assigned To
+                    <button onClick={() => {setAssignee(inv.assigned_to || ""); setShowAssignModal(true)}} className="text-[10px] text-blue-400 hover:text-blue-300 ml-2">Edit</button>
+                  </label>
                   <p className="text-sm text-gray-300 mt-1">{inv.assigned_to || 'Unassigned'}</p>
                 </div>
                 <div className="col-span-2">
@@ -460,7 +496,7 @@ export default function InvestigationDetailPage() {
         </div>
 
         <div className="space-y-6">
-          <Card className="h-[600px] flex flex-col">
+          <Card className="h-[400px] flex flex-col">
             <CardHeader title="Analyst Notes" />
             <CardContent className="flex-1 flex flex-col p-0 overflow-hidden">
               <div className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -495,8 +531,83 @@ export default function InvestigationDetailPage() {
               </div>
             </CardContent>
           </Card>
+
+          <Card>
+            <CardHeader title="Workflow History" />
+            <CardContent className="p-0">
+              <div className="p-4 max-h-[400px] overflow-y-auto">
+                {inv.history && inv.history.length > 0 ? (
+                  <div className="space-y-3">
+                    {inv.history.map((h: any) => (
+                      <div key={h.id} className="text-sm flex flex-col space-y-1 p-2 bg-[#151518] rounded border border-gray-800">
+                        <div className="flex justify-between items-center">
+                          <span className="font-semibold text-gray-300">{h.changed_by || 'System'}</span>
+                          <span className="text-xs text-gray-500">{new Date(h.created_at).toLocaleString()}</span>
+                        </div>
+                        <div className="text-gray-400 text-xs">
+                          Changed status from <span className="text-white">{h.previous_status || '-'}</span> to <span className="text-white">{h.new_status}</span>
+                        </div>
+                        {h.reason && <div className="text-gray-400 text-xs mt-1 italic">&quot;{h.reason}&quot;</div>}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center text-gray-500 text-sm">No workflow history available.</div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
         </div>
       </div>
+
+      {showResModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
+          <div className="bg-[#1e1e24] border border-gray-800 rounded-lg w-full max-w-md flex flex-col shadow-xl">
+            <div className="p-4 border-b border-gray-800 flex justify-between items-center bg-[#1e1e24] rounded-t-lg">
+              <h2 className="text-lg font-semibold text-white">Investigation Resolution</h2>
+              <button onClick={() => {setShowResModal(false); setStatus(inv.status);}} className="text-gray-400 hover:text-white">✕</button>
+            </div>
+            <div className="p-6">
+              <label className="block text-sm font-medium text-gray-400 mb-2">Resolution Summary</label>
+              <textarea
+                className="w-full bg-[#151518] border border-gray-800 rounded-lg p-3 text-white text-sm h-32"
+                placeholder="Investigation completed after review..."
+                value={resolutionText}
+                onChange={e => setResolutionText(e.target.value)}
+              />
+            </div>
+            <div className="p-4 border-t border-gray-800 flex justify-end space-x-3 bg-[#1e1e24] rounded-b-lg">
+              <button onClick={() => {setShowResModal(false); setStatus(inv.status);}} className="px-4 py-2 text-gray-400 hover:text-white text-sm font-medium">Cancel</button>
+              <button onClick={() => updateStatusAPI(pendingStatus, resolutionText)} disabled={updatingStatus} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium disabled:opacity-50">Save & {pendingStatus === 'RESOLVED' ? 'Resolve' : 'Close'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showAssignModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
+          <div className="bg-[#1e1e24] border border-gray-800 rounded-lg w-full max-w-md flex flex-col shadow-xl">
+            <div className="p-4 border-b border-gray-800 flex justify-between items-center bg-[#1e1e24] rounded-t-lg">
+              <h2 className="text-lg font-semibold text-white">Assign Analyst</h2>
+              <button onClick={() => setShowAssignModal(false)} className="text-gray-400 hover:text-white">✕</button>
+            </div>
+            <div className="p-6">
+              <label className="block text-sm font-medium text-gray-400 mb-2">Assignee Name</label>
+              <input
+                type="text"
+                className="w-full bg-[#151518] border border-gray-800 rounded-lg p-2 text-white text-sm"
+                placeholder="e.g. John Doe, unassigned..."
+                value={assignee}
+                onChange={e => setAssignee(e.target.value)}
+              />
+            </div>
+            <div className="p-4 border-t border-gray-800 flex justify-end space-x-3 bg-[#1e1e24] rounded-b-lg">
+              <button onClick={() => setShowAssignModal(false)} className="px-4 py-2 text-gray-400 hover:text-white text-sm font-medium">Cancel</button>
+              <button onClick={handleAssign} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium">Save</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {viewEvent && <EventDetailsModal event={viewEvent} onClose={() => setViewEvent(null)} />}
       {viewAlert && <AlertDetailsModal alert={viewAlert} onClose={() => setViewAlert(null)} />}

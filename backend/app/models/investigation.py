@@ -37,6 +37,7 @@ class Investigation(Base):
 
     evidence = relationship("InvestigationEvidence", back_populates="investigation", cascade="all, delete-orphan")
     notes = relationship("InvestigationNote", back_populates="investigation", cascade="all, delete-orphan")
+    history = relationship("InvestigationHistory", back_populates="investigation", cascade="all, delete-orphan", order_by="desc(InvestigationHistory.created_at)")
 
 class InvestigationEvidence(Base):
     __tablename__ = "investigation_evidence"
@@ -65,3 +66,16 @@ class InvestigationNote(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     investigation = relationship("Investigation", back_populates="notes")
+
+class InvestigationHistory(Base):
+    __tablename__ = "investigation_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    investigation_id = Column(Integer, ForeignKey("investigation.id", ondelete="CASCADE"), nullable=False)
+    previous_status = Column(String, nullable=True)
+    new_status = Column(String, nullable=False)
+    changed_by = Column(String, nullable=True)
+    reason = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    investigation = relationship("Investigation", back_populates="history")

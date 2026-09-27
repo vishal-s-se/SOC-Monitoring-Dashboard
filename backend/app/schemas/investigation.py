@@ -66,9 +66,21 @@ class InvestigationInDBBase(InvestigationBase):
 
     model_config = ConfigDict(from_attributes=True)
 
+
+class InvestigationHistory(BaseModel):
+    id: int
+    investigation_id: int
+    previous_status: Optional[str] = None
+    new_status: str
+    changed_by: Optional[str] = None
+    reason: Optional[str] = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
 class Investigation(InvestigationInDBBase):
     evidence: List[InvestigationEvidence] = []
     notes: List[InvestigationNote] = []
+    history: List[InvestigationHistory] = []
 
 class InvestigationSummary(InvestigationInDBBase):
     evidence_count: int = 0
