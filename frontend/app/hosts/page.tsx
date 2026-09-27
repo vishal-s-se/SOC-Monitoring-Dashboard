@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { api } from '@/lib/api'
 import { Card, CardContent } from '@/components/ui/Card'
 import { PageHeader, LoadingState, ErrorState } from '@/components/ui/States'
@@ -59,6 +60,14 @@ export default function HostsPage() {
                 </div>
               )},
               { key: 'first_seen', title: 'Discovered', render: (r) => r.first_seen ? new Date(r.first_seen).toLocaleDateString() : '-' },
+              { key: 'actions', title: 'Actions', render: (r) => (
+                <Link
+                  href={`/attack-timeline?hostname=${encodeURIComponent(r.hostname)}`}
+                  className="text-xs bg-gray-800 hover:bg-indigo-600 text-gray-300 hover:text-white px-2.5 py-1 rounded transition-colors inline-block"
+                >
+                  View Timeline
+                </Link>
+              )},
             ]}
           />
         </CardContent>

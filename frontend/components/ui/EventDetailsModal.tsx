@@ -23,6 +23,13 @@ export function EventDetailsModal({ event, onClose }: { event: any, onClose: () 
             >
               Add to Investigation
             </button>
+            <a
+              href={`/attack-timeline?search=${encodeURIComponent(event.event_id || '')}`}
+              onClick={onClose}
+              className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1 rounded transition-colors inline-flex items-center space-x-1"
+            >
+              <span>View in Timeline</span>
+            </a>
           </div>
           <button
             onClick={onClose}

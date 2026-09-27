@@ -3,7 +3,7 @@ import pytest
 import os
 import uuid
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
 
 load_dotenv(".env.test")
@@ -476,3 +476,277 @@ async def test_attack_timeline_api(client: AsyncClient, sample_data):
     # 8. Investigation not found
     inv_nf = await client.get("/api/v1/attack-timeline/?investigation_id=999999")
     assert inv_nf.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_attack_timeline_investigation_correlation(client: AsyncClient, sample_data, db: AsyncSession):
+    # Setup correlated events around sample event
+    ev1 = sample_data['event']
+    now = datetime.now(timezone.utc)
+
+    # Correlated Event 2: Same host, same username, different event_id
+    ev2 = Event(
+        event_id=str(uuid.uuid4()),
+        agent_id=sample_data['agent'].id,
+        host_id=sample_data['host'].id,
+        hostname=sample_data['host'].hostname,
+        username='alice',
+        source_ip='192.168.1.50',
+        destination_ip='10.0.0.1',
+        event_category='authentication',
+        event_type='login',
+        severity='MEDIUM',
+        raw_log_id=sample_data['raw_log'].id,
+        timestamp=now
+    )
+    db.add(ev2)
+
+    # Correlated Event 3: Same source IP
+    ev3 = Event(
+        event_id=str(uuid.uuid4()),
+        agent_id=sample_data['agent'].id,
+        host_id=sample_data['host'].id,
+        hostname='another-host',
+        source_ip='192.168.1.50',
+        event_category='network',
+        event_type='connect',
+        severity='INFO',
+        timestamp=now
+    )
+    db.add(ev3)
+    await db.commit()
+
+    # 1. Create Investigation with ev1 as direct evidence
+    create_inv = await client.post('/api/v1/investigations/', json={
+        'title': 'Incident Alpha',
+        'description': 'Investigating incident',
+        'severity': 'CRITICAL',
+        'evidence': [
+            {
+                'evidence_type': 'EVENT',
+                'reference_id': str(ev1.id)
+            }
+        ]
+    })
+    assert create_inv.status_code == 201
+    inv_id = create_inv.json()['id']
+
+    # 2. Query timeline for this investigation
+    res = await client.get(f'/api/v1/attack-timeline/?investigation_id={inv_id}')
+    assert res.status_code == 200
+    data = res.json()
+    assert 'investigation_info' in data
+    assert data['investigation_info']['title'] == 'Incident Alpha'
+    assert data['investigation_info']['severity'] == 'CRITICAL'
+    assert data['investigation_info']['evidence_count'] >= 1
+    assert data['investigation_info']['correlated_count'] >= 1
+
+    # 3. Check duplicate prevention & provenance
+    items = data['items']
+    ev_ids = [i['id'] for i in items]
+    assert len(ev_ids) == len(set(ev_ids))
+
+    direct_item = next(i for i in items if i['id'] == ev1.id)
+    assert direct_item['provenance'] == 'DIRECT_EVIDENCE'
+    assert direct_item['context_type'] == 'DIRECT_EVIDENCE'
+    assert direct_item['investigation_id'] == inv_id
+
+    # 4. Check correlation reason on correlated item
+    corr_items = [i for i in items if i['provenance'] == 'CORRELATED_EVENT']
+    assert len(corr_items) >= 1
+    assert any('Same host' in (i['context_reason'] or '') or 'Same agent' in (i['context_reason'] or '') for i in corr_items)
+
+    # 5. Provenance filtering: DIRECT_EVIDENCE only
+    direct_res = await client.get(f'/api/v1/attack-timeline/?investigation_id={inv_id}&provenance=DIRECT_EVIDENCE')
+    assert direct_res.status_code == 200
+    direct_data = direct_res.json()
+    assert all(i['provenance'] == 'DIRECT_EVIDENCE' for i in direct_data['items'])
+    assert len(direct_data['items']) == 1
+
+    # 6. Provenance filtering: CORRELATED_EVENT only
+    corr_res = await client.get(f'/api/v1/attack-timeline/?investigation_id={inv_id}&provenance=CORRELATED_EVENT')
+    assert corr_res.status_code == 200
+    corr_data = corr_res.json()
+    assert all(i['provenance'] == 'CORRELATED_EVENT' for i in corr_data['items'])
+    assert all(i['id'] != ev1.id for i in corr_data['items'])
+
+    # 7. Empty investigation
+    empty_inv = await client.post('/api/v1/investigations/', json={
+        'title': 'Empty Inv',
+        'severity': 'LOW',
+        'evidence': []
+    })
+    empty_inv_id = empty_inv.json()['id']
+    empty_res = await client.get(f'/api/v1/attack-timeline/?investigation_id={empty_inv_id}')
+    assert empty_res.status_code == 200
+    assert empty_res.json()['total'] == 0
+    assert empty_res.json()['investigation_info']['evidence_count'] == 0
+
+    # 8. Raw-log traceability
+    assert any(i.get('raw_log_id') is not None for i in items)
+
+    # 9. Summary metrics verification
+    assert "summary" in data and data["summary"] is not None
+    assert data["summary"]["total_events"] >= 1
+    assert data["summary"]["direct_evidence_count"] >= 1
+    assert len(data["summary"]["unique_hosts"]) >= 1
+    assert len(data["summary"]["unique_agents"]) >= 1
+
+
+@pytest.mark.asyncio
+async def test_attack_timeline_event_relationships_phase_7d4(client: AsyncClient, sample_data: dict, db: AsyncSession):
+    now = datetime.utcnow()
+
+    # 1. Create a RawLog
+    raw_log = RawLog(
+        source_type="syslog",
+        raw_payload="{\"msg\": \"test raw payload 7d4\"}",
+        ingestion_status="PARSED",
+        agent_id=sample_data['agent'].id,
+        host_id=sample_data['host'].id,
+        event_identifier=str(uuid.uuid4()),
+        timestamp=now
+    )
+    db.add(raw_log)
+    await db.commit()
+    await db.refresh(raw_log)
+
+    # 2. Create Event linked to host, agent, raw_log
+    ev = Event(
+        event_id=str(uuid.uuid4()),
+        agent_id=sample_data['agent'].id,
+        host_id=sample_data['host'].id,
+        hostname=sample_data['host'].hostname,
+        operating_system=sample_data['host'].operating_system,
+        source_ip='10.0.0.100',
+        destination_ip='10.0.0.200',
+        username='secops_user',
+        raw_log_id=raw_log.id,
+        event_category='process',
+        event_type='exec',
+        severity='HIGH',
+        timestamp=now
+    )
+    db.add(ev)
+    await db.commit()
+    await db.refresh(ev)
+
+    # 3. Create Alert and link to Event via DetectionResult
+    alert = Alert(
+        alert_id=str(uuid.uuid4()),
+        rule_id=sample_data['rule'].id,
+        fingerprint=f"RULE-7D4:{uuid.uuid4()}",
+        title="Unauthorized Execution 7D4",
+        description="Alert for Phase 7D-4 relationship testing",
+        severity="HIGH",
+        status="NEW",
+        first_seen=now,
+        last_seen=now,
+        agent_id=sample_data['agent'].id,
+        host_id=sample_data['host'].id
+    )
+    db.add(alert)
+    await db.commit()
+    await db.refresh(alert)
+
+    dr = DetectionResult(
+        rule_id=sample_data['rule'].id,
+        event_id=ev.id,
+        alert_id=alert.id,
+        status="NEW"
+    )
+    db.add(dr)
+    await db.commit()
+
+    # 4. Create an standalone event with no alert, no raw log, no investigation
+    standalone_ev = Event(
+        event_id=str(uuid.uuid4()),
+        agent_id=None,
+        host_id=None,
+        hostname='standalone-host',
+        event_category='system',
+        event_type='service_start',
+        severity='INFO',
+        timestamp=now - timedelta(minutes=5)
+    )
+    db.add(standalone_ev)
+    await db.commit()
+    await db.refresh(standalone_ev)
+
+    # 5. Create Investigation with ev as direct evidence
+    create_inv = await client.post('/api/v1/investigations/', json={
+        'title': 'Investigation 7D4 Traceability',
+        'description': 'Testing relationship navigation',
+        'severity': 'HIGH',
+        'evidence': [
+            {
+                'evidence_type': 'EVENT',
+                'reference_id': str(ev.id)
+            }
+        ]
+    })
+    assert create_inv.status_code == 201
+    inv_id = create_inv.json()['id']
+
+    # 6. Test General Timeline (no investigation_id param) to verify batch investigation lookup
+    gen_res = await client.get(f'/api/v1/attack-timeline/?search={ev.event_id}')
+    assert gen_res.status_code == 200
+    gen_items = gen_res.json()['items']
+    assert len(gen_items) >= 1
+    target_item = next(i for i in gen_items if i['id'] == ev.id)
+
+    # Verify Event -> Alert relationship
+    assert target_item['alert_id'] == str(alert.id)
+    assert target_item['alert_title'] == "Unauthorized Execution 7D4"
+    assert target_item['alert_severity'] == "HIGH"
+
+    # Verify Event -> Raw Log relationship
+    assert target_item['raw_log_id'] == raw_log.id
+
+    # Verify Event -> Host relationship
+    assert target_item['host_id'] == sample_data['host'].id
+    assert target_item['hostname'] == sample_data['host'].hostname
+    assert target_item['operating_system'] == sample_data['host'].operating_system
+
+    # Verify Event -> Agent relationship
+    assert target_item['agent_id'] == sample_data['agent'].id
+
+    # Verify Event -> Investigation relationship (resolved via batch evidence lookup!)
+    assert target_item['investigation_id'] == inv_id
+    assert target_item['investigation_title'] == 'Investigation 7D4 Traceability'
+
+    # 7. Test Empty / Missing relationships on standalone event
+    std_res = await client.get(f'/api/v1/attack-timeline/?search={standalone_ev.event_id}')
+    assert std_res.status_code == 200
+    std_items = std_res.json()['items']
+    assert len(std_items) == 1
+    std_item = std_items[0]
+    assert std_item['alert_id'] is None
+    assert std_item['alert_title'] is None
+    assert std_item['raw_log_id'] is None
+    assert std_item['investigation_id'] is None
+
+    # 8. Test Investigation-Centered Timeline Navigation
+    inv_res = await client.get(f'/api/v1/attack-timeline/?investigation_id={inv_id}')
+    assert inv_res.status_code == 200
+    inv_data = inv_res.json()
+    assert inv_data['investigation_info']['id'] == inv_id
+    assert inv_data['investigation_info']['title'] == 'Investigation 7D4 Traceability'
+    inv_target = next(i for i in inv_data['items'] if i['id'] == ev.id)
+    assert inv_target['provenance'] == 'DIRECT_EVIDENCE'
+    assert inv_target['investigation_id'] == inv_id
+    assert inv_target['investigation_title'] == 'Investigation 7D4 Traceability'
+
+    # 9. Test Host Filter Navigation
+    host_res = await client.get(f'/api/v1/attack-timeline/?hostname={sample_data["host"].hostname}')
+    assert host_res.status_code == 200
+    assert all(sample_data["host"].hostname in (i['hostname'] or '') for i in host_res.json()['items'])
+
+    # 10. Test Agent Filter Navigation
+    agent_res = await client.get(f'/api/v1/attack-timeline/?agent_id={sample_data["agent"].id}')
+    assert agent_res.status_code == 200
+    assert all(i['agent_id'] == sample_data['agent'].id for i in agent_res.json()['items'])
+
+    # 11. Test Invalid Investigation ID returns 404
+    invalid_res = await client.get('/api/v1/attack-timeline/?investigation_id=99999999')
+    assert invalid_res.status_code == 404

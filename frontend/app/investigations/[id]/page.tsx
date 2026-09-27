@@ -233,9 +233,12 @@ export default function InvestigationDetailPage() {
         <div className="flex items-center space-x-2 shrink-0">
           <Link
             href={`/attack-timeline?investigation_id=${inv.id}`}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-3 py-2 rounded-lg transition-colors flex items-center space-x-1"
+            className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-3 py-2 rounded-lg transition-colors flex items-center space-x-1.5"
           >
-            <span>Timeline</span>
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span>View Attack Timeline</span>
           </Link>
           <SeverityBadge severity={inv.severity} />
           <select
