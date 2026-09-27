@@ -18,36 +18,43 @@ async def list_raw_logs(
     page_size: int = Query(50, ge=1, le=100),
     agent_id: Optional[int] = None,
     source_type: Optional[str] = None,
+    search: Optional[str] = None,
     start_time: Optional[datetime] = None,
     end_time: Optional[datetime] = None,
     db: AsyncSession = Depends(get_db)
 ):
     stmt = select(RawLogModel)
-    
+
     # Filtering
     if agent_id:
         stmt = stmt.where(RawLogModel.agent_id == agent_id)
     if source_type:
         stmt = stmt.where(RawLogModel.source_type == source_type)
+    if search:
+        from sqlalchemy import or_
+        stmt = stmt.where(or_(
+            RawLogModel.raw_payload.ilike(f'%{search}%'),
+            RawLogModel.event_identifier.ilike(f'%{search}%')
+        ))
     if start_time:
         stmt = stmt.where(RawLogModel.timestamp >= start_time)
     if end_time:
         if start_time and end_time < start_time:
             raise HTTPException(status_code=400, detail="end_time must be after start_time")
         stmt = stmt.where(RawLogModel.timestamp <= end_time)
-        
+
     # Count total
     count_stmt = select(func.count()).select_from(stmt.subquery())
     total_result = await db.execute(count_stmt)
     total = total_result.scalar_one()
-    
+
     # Pagination & Sorting
     stmt = stmt.order_by(RawLogModel.timestamp.desc())
     stmt = stmt.offset((page - 1) * page_size).limit(page_size)
-    
+
     result = await db.execute(stmt)
     items = result.scalars().all()
-    
+
     return PaginatedResponse(
         items=items,
         page=page,
