@@ -6,6 +6,7 @@ import { Card, CardContent } from '@/components/ui/Card'
 import { PageHeader, LoadingState, ErrorState, EmptyState } from '@/components/ui/States'
 import { DataTable } from '@/components/ui/DataTable'
 import { FilterBar, FilterInput, FilterSelect } from '@/components/ui/FilterBar'
+import { AddToInvestigationModal } from '@/components/ui/AddToInvestigationModal'
 import { Pagination } from '@/components/ui/Pagination'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 
@@ -28,6 +29,7 @@ export default function RawLogsPage() {
 
   // Modal
   const [selectedLog, setSelectedLog] = useState<any | null>(null)
+  const [showInvestigateModal, setShowInvestigateModal] = useState(false)
 
   useEffect(() => {
     const handler = setTimeout(() => {
@@ -143,9 +145,17 @@ export default function RawLogsPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
           <div className="bg-[#1e1e24] border border-gray-800 rounded-lg w-full max-w-4xl max-h-[90vh] flex flex-col shadow-xl">
             <div className="p-6 border-b border-gray-800 flex justify-between items-center bg-[#1e1e24] sticky top-0 rounded-t-lg z-10">
-              <div>
-                <h2 className="text-xl font-semibold text-white">Raw Log Evidence</h2>
-                <p className="text-sm text-gray-400 mt-1">ID: {selectedLog.id} • {selectedLog.event_identifier}</p>
+              <div className="flex items-center space-x-4">
+                <div>
+                  <h2 className="text-xl font-semibold text-white">Raw Log Evidence</h2>
+                  <p className="text-sm text-gray-400 mt-1">ID: {selectedLog.id} • {selectedLog.event_identifier}</p>
+                </div>
+                <button
+                  onClick={() => setShowInvestigateModal(true)}
+                  className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded"
+                >
+                  Add to Investigation
+                </button>
               </div>
               <button
                 onClick={() => setSelectedLog(null)}
@@ -208,6 +218,15 @@ export default function RawLogsPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {showInvestigateModal && selectedLog && (
+        <AddToInvestigationModal
+          evidenceType="RAW_LOG"
+          referenceId={selectedLog.id.toString()}
+          defaultTitle={`Investigation: Raw Log ${selectedLog.id}`}
+          onClose={() => setShowInvestigateModal(false)}
+        />
       )}
     </div>
   )

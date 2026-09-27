@@ -8,6 +8,7 @@ import { DataTable } from '@/components/ui/DataTable'
 import { useWebSocket } from '@/hooks/useWebSocket'
 import { SeverityBadge } from '@/components/ui/SeverityBadge'
 import { StatusBadge } from '@/components/ui/StatusBadge'
+import { AddToInvestigationModal } from '@/components/ui/AddToInvestigationModal'
 
 export default function AlertsPage() {
   const [alerts, setAlerts] = useState<any[]>([])

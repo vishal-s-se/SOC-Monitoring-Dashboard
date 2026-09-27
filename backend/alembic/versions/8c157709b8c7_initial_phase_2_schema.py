@@ -1,7 +1,7 @@
 """Initial Phase 2 schema
 
 Revision ID: 8c157709b8c7
-Revises: 
+Revises:
 Create Date: 2026-09-26 15:38:00.822063
 
 """

@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from backend.app.api.v1.endpoints import (
+    investigations,
     events,
     raw_logs,
     alerts,
@@ -19,3 +20,4 @@ api_router.include_router(agents.router, prefix="/agents", tags=["agents"])
 api_router.include_router(hosts.router, prefix="/hosts", tags=["hosts"])
 api_router.include_router(detections.router, prefix="/detections", tags=["detections"])
 api_router.include_router(ws.router, prefix="/ws", tags=["websocket"])
+api_router.include_router(investigations.router, prefix="/investigations", tags=["investigations"])

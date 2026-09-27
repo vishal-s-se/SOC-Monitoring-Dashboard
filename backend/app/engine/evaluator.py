@@ -11,7 +11,7 @@ class ConditionEvaluator:
         """
         Evaluate a list of conditions against normalized event data.
         If all conditions pass, return True.
-        
+
         Example condition:
         {"field": "event_type", "operator": "equals", "value": "ssh_login"}
         """
@@ -22,17 +22,17 @@ class ConditionEvaluator:
             field = condition.get("field")
             operator = condition.get("operator", "equals").lower()
             expected_value = condition.get("value")
-            
+
             if not field or expected_value is None:
                 logger.warning(f"Invalid condition missing field or value: {condition}")
                 return False
 
             # Retrieve actual value from the event
             actual_value = event_data.get(field)
-            
+
             if not ConditionEvaluator._evaluate_single(actual_value, operator, expected_value):
                 return False
-                
+
         return True
 
     @staticmethod

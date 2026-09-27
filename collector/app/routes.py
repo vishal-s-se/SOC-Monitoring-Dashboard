@@ -25,7 +25,7 @@ async def register_agent(
     stmt = select(Agent).where(Agent.agent_id == registration.agent_id)
     result = await db.execute(stmt)
     agent = result.scalar_one_or_none()
-    
+
     if agent:
         old_status = agent.status
         agent.hostname = registration.hostname
@@ -35,7 +35,7 @@ async def register_agent(
         agent.metadata_ = registration.metadata_
         agent.status = "ONLINE"
         await db.commit()
-        
+
         if old_status != "ONLINE":
             await event_bus.publish("agent_status_changed", {
                 "agent_id": agent.agent_id,
@@ -43,13 +43,13 @@ async def register_agent(
                 "status": "ONLINE",
                 "previous_status": old_status
             })
-            
+
         return {"status": "ok", "message": "Agent updated", "agent_id": agent.agent_id}
-    
+
     stmt = select(Host).where(Host.hostname == registration.hostname)
     result = await db.execute(stmt)
     host = result.scalar_one_or_none()
-    
+
     if not host:
         host = Host(
             host_identifier=str(uuid.uuid4()),
@@ -60,13 +60,13 @@ async def register_agent(
         db.add(host)
         await db.commit()
         await db.refresh(host)
-        
+
         await event_bus.publish("host_status_changed", {
             "host_id": host.id,
             "hostname": host.hostname,
             "status": host.status
         })
-        
+
     new_agent = Agent(
         agent_id=registration.agent_id,
         host_id=host.id,
@@ -79,14 +79,14 @@ async def register_agent(
     )
     db.add(new_agent)
     await db.commit()
-    
+
     await event_bus.publish("agent_status_changed", {
         "agent_id": new_agent.agent_id,
         "hostname": new_agent.hostname,
         "status": new_agent.status,
         "previous_status": "UNREGISTERED"
     })
-    
+
     return {"status": "ok", "message": "Agent registered successfully", "agent_id": new_agent.agent_id}
 
 @router.post("/heartbeat")
@@ -98,19 +98,19 @@ async def receive_heartbeat(
     stmt = select(Agent).where(Agent.agent_id == heartbeat_req.agent_id)
     result = await db.execute(stmt)
     agent = result.scalar_one_or_none()
-    
+
     if not agent:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Agent not found. Please register first."
         )
-        
+
     old_status = agent.status
     agent.last_heartbeat = heartbeat_req.timestamp
     agent.status = heartbeat_req.connection_status
     if heartbeat_req.ip_address:
         agent.ip_address = heartbeat_req.ip_address
-    
+
     hb = Heartbeat(
         agent_id=agent.id,
         host_id=agent.host_id,
@@ -122,7 +122,7 @@ async def receive_heartbeat(
     )
     db.add(hb)
     await db.commit()
-    
+
     if old_status != heartbeat_req.connection_status:
         await event_bus.publish("agent_status_changed", {
             "agent_id": agent.agent_id,
@@ -130,7 +130,7 @@ async def receive_heartbeat(
             "status": agent.status,
             "previous_status": old_status
         })
-    
+
     return {"status": "ok"}
 
 from collector.app.pipeline import process_event
@@ -144,11 +144,11 @@ async def receive_event(
     stmt = select(Agent).where(Agent.agent_id == event_req.agent_id)
     result = await db.execute(stmt)
     agent = result.scalar_one_or_none()
-    
+
     if not agent:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Agent not found. Please register first."
         )
-        
+
     return await process_event(event_req, agent, db)

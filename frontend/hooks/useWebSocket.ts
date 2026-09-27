@@ -15,7 +15,7 @@ const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000/api/v1/ws/
 export function useWebSocket() {
   const [status, setStatus] = useState<ConnectionStatus>("DISCONNECTED");
   const [lastMessage, setLastMessage] = useState<WebSocketMessage | null>(null);
-  
+
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout>();
   const isComponentMounted = useRef(true);
@@ -26,10 +26,10 @@ export function useWebSocket() {
     }
 
     setStatus("CONNECTING");
-    
+
     try {
       const ws = new WebSocket(WS_URL);
-      
+
       ws.onopen = () => {
         if (!isComponentMounted.current) return;
         setStatus("CONNECTED");
@@ -38,7 +38,7 @@ export function useWebSocket() {
           reconnectTimeoutRef.current = undefined;
         }
       };
-      
+
       ws.onmessage = (event) => {
         if (!isComponentMounted.current) return;
         try {
@@ -48,12 +48,12 @@ export function useWebSocket() {
           console.error("Failed to parse websocket message", err);
         }
       };
-      
+
       ws.onclose = () => {
         if (!isComponentMounted.current) return;
         setStatus("DISCONNECTED");
         wsRef.current = null;
-        
+
         // Attempt reconnect after 3 seconds
         if (!reconnectTimeoutRef.current) {
           reconnectTimeoutRef.current = setTimeout(() => {
@@ -61,12 +61,12 @@ export function useWebSocket() {
           }, 3000);
         }
       };
-      
+
       ws.onerror = () => {
         if (!isComponentMounted.current) return;
         setStatus("ERROR");
       };
-      
+
       wsRef.current = ws;
     } catch (error) {
       console.error("WebSocket connection error:", error);
@@ -89,7 +89,7 @@ export function useWebSocket() {
   useEffect(() => {
     isComponentMounted.current = true;
     connect();
-    
+
     return () => {
       isComponentMounted.current = false;
       disconnect();

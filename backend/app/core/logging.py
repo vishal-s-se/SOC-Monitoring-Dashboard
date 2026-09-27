@@ -4,7 +4,7 @@ from .config import settings
 
 def setup_logging():
     log_level = logging.DEBUG if settings.ENVIRONMENT == "development" else logging.INFO
-    
+
     # Configure root logger
     logging.basicConfig(
         level=log_level,
@@ -13,7 +13,7 @@ def setup_logging():
             logging.StreamHandler(sys.stdout)
         ]
     )
-    
+
     # Create application logger
     logger = logging.getLogger("soc_monitor")
     return logger

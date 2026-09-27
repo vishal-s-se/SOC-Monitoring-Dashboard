@@ -6,7 +6,7 @@ logger = logging.getLogger(__name__)
 
 class InternalEventBus:
     """Lightweight in-memory event bus for Phase 6A."""
-    
+
     def __init__(self):
         self._subscribers: List[Callable[[dict], Awaitable[None]]] = []
         self._queues = {}

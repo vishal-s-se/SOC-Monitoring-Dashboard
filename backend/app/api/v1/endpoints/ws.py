@@ -37,7 +37,7 @@ async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     try:
         while True:
-            # We don't expect messages from the client in this phase, 
+            # We don't expect messages from the client in this phase,
             # but we need to receive to detect disconnects.
             data = await websocket.receive_text()
     except WebSocketDisconnect:

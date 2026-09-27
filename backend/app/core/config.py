@@ -5,13 +5,13 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "SOC Monitor"
     VERSION: str = "0.1.0"
     API_V1_STR: str = "/api/v1"
-    
+
     # Environment
     ENVIRONMENT: str = "development"
-    
+
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
-    
+
     # Database
     DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/soc_monitor"
 

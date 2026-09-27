@@ -32,7 +32,7 @@ async def test_valid_registration(client: AsyncClient):
     }
     headers = {"X-Agent-Auth": "changeme_secret"}
     response = await client.post("/api/v1/agent/register", json=payload, headers=headers)
-    
+
     assert response.status_code == 201
     assert response.json()["status"] == "ok"
     assert response.json()["agent_id"] == agent_id
@@ -47,11 +47,11 @@ async def test_idempotent_registration(client: AsyncClient):
         "agent_version": "1.0"
     }
     headers = {"X-Agent-Auth": "changeme_secret"}
-    
+
     # First time
     resp1 = await client.post("/api/v1/agent/register", json=payload, headers=headers)
     assert resp1.status_code == 201
-    
+
     # Second time
     payload["agent_version"] = "1.1"
     resp2 = await client.post("/api/v1/agent/register", json=payload, headers=headers)
@@ -83,7 +83,7 @@ async def test_valid_heartbeat_and_event(client: AsyncClient):
     }
     headers = {"X-Agent-Auth": "changeme_secret"}
     await client.post("/api/v1/agent/register", json=payload, headers=headers)
-    
+
     # 2. Heartbeat
     hb_payload = {
         "agent_id": agent_id,
@@ -94,7 +94,7 @@ async def test_valid_heartbeat_and_event(client: AsyncClient):
     }
     hb_resp = await client.post("/api/v1/agent/heartbeat", json=hb_payload, headers=headers)
     assert hb_resp.status_code == 200
-    
+
     # 3. Event submission
     event_payload = {
         "event_id": str(uuid.uuid4()),

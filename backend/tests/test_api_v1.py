@@ -197,7 +197,7 @@ async def test_time_range_validation(client: AsyncClient, sample_data):
     # 19. time-range validation
     now = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
     past = "2000-01-01T00:00:00Z"
-    
+
     # Valid
     res = await client.get(f"/api/v1/events/?start_time={past}&end_time={now}")
     assert res.status_code == 200
@@ -216,13 +216,80 @@ async def test_websocket_manager():
             self.sent = []
         async def send_json(self, data):
             self.sent.append(data)
-            
+
     ws = MockWebSocket()
     manager.active_connections.append(ws)
-    
+
     await manager.broadcast_internal_event({"type": "test"})
     assert len(ws.sent) == 1
     assert ws.sent[0]["type"] == "test"
-    
+
     manager.disconnect(ws)
     assert ws not in manager.active_connections
+
+@pytest.mark.asyncio
+async def test_investigation_lifecycle(client: AsyncClient):
+    # 1. Create
+    create_resp = await client.post("/api/v1/investigations/", json={
+        "title": "Suspicious Login Activity",
+        "description": "Multiple failed logins",
+        "severity": "HIGH",
+        "evidence": [
+            {
+                "evidence_type": "EVENT",
+                "reference_id": "999"
+            }
+        ]
+    })
+    assert create_resp.status_code == 201
+    inv = create_resp.json()
+    assert inv["title"] == "Suspicious Login Activity"
+    assert inv["status"] == "OPEN"
+    assert len(inv["evidence"]) == 1
+    inv_id = inv["id"]
+
+    # 2. Get List
+    list_resp = await client.get("/api/v1/investigations/")
+    assert list_resp.status_code == 200
+    assert len(list_resp.json()["items"]) > 0
+
+    # 3. Get Single
+    get_resp = await client.get(f"/api/v1/investigations/{inv_id}")
+    assert get_resp.status_code == 200
+    assert get_resp.json()["id"] == inv_id
+
+    # 4. Add Note
+    note_resp = await client.post(f"/api/v1/investigations/{inv_id}/notes", json={
+        "content": "Looking into this now",
+        "author": "Analyst1"
+    })
+    assert note_resp.status_code == 201
+    assert note_resp.json()["content"] == "Looking into this now"
+
+    # 5. Add Evidence
+    ev_resp = await client.post(f"/api/v1/investigations/{inv_id}/evidence", json={
+        "evidence_type": "ALERT",
+        "reference_id": "100"
+    })
+    assert ev_resp.status_code == 201
+    assert ev_resp.json()["evidence_type"] == "ALERT"
+
+    # 6. Duplicate Evidence Prevention
+    dup_resp = await client.post(f"/api/v1/investigations/{inv_id}/evidence", json={
+        "evidence_type": "ALERT",
+        "reference_id": "100"
+    })
+    assert dup_resp.status_code == 200 or dup_resp.status_code == 201
+
+    # 7. Update Status
+    stat_resp = await client.post(f"/api/v1/investigations/{inv_id}/status", json={
+        "status": "CLOSED",
+        "resolution": "False positive."
+    })
+    assert stat_resp.status_code == 200
+    assert stat_resp.json()["status"] == "CLOSED"
+    assert stat_resp.json()["resolution"] == "False positive."
+
+    # 8. Check Not Found
+    nf_resp = await client.get("/api/v1/investigations/999999")
+    assert nf_resp.status_code == 404

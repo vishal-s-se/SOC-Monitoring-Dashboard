@@ -1,6 +1,10 @@
+import { useState } from "react";
 import { SeverityBadge } from "./SeverityBadge";
+import { AddToInvestigationModal } from "./AddToInvestigationModal";
 
 export function EventDetailsModal({ event, onClose }: { event: any, onClose: () => void }) {
+  const [showInvestigateModal, setShowInvestigateModal] = useState(false);
+
   if (!event) return null;
 
   return (
@@ -8,10 +12,18 @@ export function EventDetailsModal({ event, onClose }: { event: any, onClose: () 
       <div className="relative w-full max-w-4xl max-h-[90vh] bg-gray-900 border border-gray-700 rounded-lg shadow-xl flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-gray-800">
-          <h3 className="text-lg font-semibold text-white">
-            Event Details
-            <span className="ml-3 text-sm font-normal text-gray-400">{event.event_id}</span>
-          </h3>
+          <div className="flex items-center space-x-4">
+            <h3 className="text-lg font-semibold text-white">
+              Event Details
+              <span className="ml-3 text-sm font-normal text-gray-400">{event.event_id}</span>
+            </h3>
+            <button
+              onClick={() => setShowInvestigateModal(true)}
+              className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded"
+            >
+              Add to Investigation
+            </button>
+          </div>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-white bg-gray-800 hover:bg-gray-700 rounded-lg text-sm p-1.5"
@@ -106,6 +118,15 @@ export function EventDetailsModal({ event, onClose }: { event: any, onClose: () 
           )}
         </div>
       </div>
+
+      {showInvestigateModal && (
+        <AddToInvestigationModal
+          evidenceType="EVENT"
+          referenceId={event.event_id}
+          defaultTitle={`Investigation: ${event.event_type}`}
+          onClose={() => setShowInvestigateModal(false)}
+        />
+      )}
     </div>
   );
 }

@@ -20,22 +20,22 @@ async def list_rules(
     db: AsyncSession = Depends(get_db)
 ):
     stmt = select(RuleModel)
-    
+
     if enabled is not None:
         stmt = stmt.where(RuleModel.enabled == enabled)
     if severity:
         stmt = stmt.where(RuleModel.severity == severity)
-        
+
     count_stmt = select(func.count()).select_from(stmt.subquery())
     total_result = await db.execute(count_stmt)
     total = total_result.scalar_one()
-    
+
     stmt = stmt.order_by(RuleModel.created_at.desc())
     stmt = stmt.offset((page - 1) * page_size).limit(page_size)
-    
+
     result = await db.execute(stmt)
     items = result.scalars().all()
-    
+
     return PaginatedResponse(
         items=items,
         page=page,
@@ -60,22 +60,22 @@ async def list_results(
     db: AsyncSession = Depends(get_db)
 ):
     stmt = select(ResultModel)
-    
+
     if rule_id:
         stmt = stmt.where(ResultModel.rule_id == rule_id)
     if event_id:
         stmt = stmt.where(ResultModel.event_id == event_id)
-        
+
     count_stmt = select(func.count()).select_from(stmt.subquery())
     total_result = await db.execute(count_stmt)
     total = total_result.scalar_one()
-    
+
     stmt = stmt.order_by(ResultModel.timestamp.desc())
     stmt = stmt.offset((page - 1) * page_size).limit(page_size)
-    
+
     result = await db.execute(stmt)
     items = result.scalars().all()
-    
+
     return PaginatedResponse(
         items=items,
         page=page,

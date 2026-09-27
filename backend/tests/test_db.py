@@ -21,7 +21,7 @@ load_dotenv(".env.test")
 
 # Test DB settings
 TEST_DATABASE_URL = os.getenv(
-    "TEST_DATABASE_URL", 
+    "TEST_DATABASE_URL",
     settings.DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://")
 )
 if "soc_monitor_test" not in TEST_DATABASE_URL:
@@ -35,7 +35,7 @@ async def db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
-    
+
     async with TestingSessionLocal() as session:
         yield session
 
@@ -51,11 +51,11 @@ async def test_create_and_retrieve_host(db: AsyncSession):
     db.add(new_host)
     await db.commit()
     await db.refresh(new_host)
-    
+
     assert new_host.id is not None
     assert new_host.hostname == "test-host"
     assert new_host.status == "ONLINE"
-    
+
     new_host.status = "OFFLINE"
     await db.commit()
     await db.refresh(new_host)
@@ -67,13 +67,13 @@ async def test_create_and_retrieve_agent(db: AsyncSession):
     db.add(host)
     await db.commit()
     await db.refresh(host)
-    
+
     agent_id = str(uuid.uuid4())
     agent = Agent(agent_id=agent_id, host_id=host.id, hostname="agent-host", agent_version="1.0.0")
     db.add(agent)
     await db.commit()
     await db.refresh(agent)
-    
+
     assert agent.id is not None
     assert agent.status == "OFFLINE"
     assert agent.agent_version == "1.0.0"
@@ -83,7 +83,7 @@ async def test_create_and_retrieve_raw_log(db: AsyncSession):
     event_ident = str(uuid.uuid4())
     timestamp = datetime.datetime.now(datetime.timezone.utc)
     raw_payload = '{"test": "payload", "value": 123}'
-    
+
     raw_log = RawLog(
         event_identifier=event_ident,
         source_type="windows_event",
@@ -93,7 +93,7 @@ async def test_create_and_retrieve_raw_log(db: AsyncSession):
     db.add(raw_log)
     await db.commit()
     await db.refresh(raw_log)
-    
+
     assert raw_log.id is not None
     assert raw_log.raw_payload == raw_payload
     assert raw_log.ingestion_status == "PENDING"
@@ -104,10 +104,10 @@ async def test_create_and_retrieve_event(db: AsyncSession):
     db.add(host)
     await db.commit()
     await db.refresh(host)
-    
+
     event_id = str(uuid.uuid4())
     timestamp = datetime.datetime.now(datetime.timezone.utc)
-    
+
     event = Event(
         event_id=event_id,
         timestamp=timestamp,
@@ -119,7 +119,7 @@ async def test_create_and_retrieve_event(db: AsyncSession):
     db.add(event)
     await db.commit()
     await db.refresh(event)
-    
+
     assert event.id is not None
     assert event.host_id == host.id
     assert event.event_category == "authentication"
@@ -130,12 +130,12 @@ async def test_create_and_retrieve_heartbeat(db: AsyncSession):
     db.add(host)
     await db.commit()
     await db.refresh(host)
-    
+
     agent = Agent(agent_id=str(uuid.uuid4()), host_id=host.id, hostname="heartbeat-host")
     db.add(agent)
     await db.commit()
     await db.refresh(agent)
-    
+
     heartbeat = Heartbeat(
         agent_id=agent.id,
         host_id=host.id,
@@ -145,7 +145,7 @@ async def test_create_and_retrieve_heartbeat(db: AsyncSession):
     db.add(heartbeat)
     await db.commit()
     await db.refresh(heartbeat)
-    
+
     assert heartbeat.id is not None
     assert heartbeat.status == "ONLINE"
     assert heartbeat.ip_address == "127.0.0.1"

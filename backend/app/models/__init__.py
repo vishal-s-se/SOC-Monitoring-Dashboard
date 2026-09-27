@@ -10,3 +10,5 @@ from .detection import DetectionRule, DetectionResult
 from .alert import Alert
 
 from .alert import Alert
+
+from backend.app.models.investigation import Investigation, InvestigationEvidence, InvestigationNote

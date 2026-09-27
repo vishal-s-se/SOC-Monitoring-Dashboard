@@ -20,22 +20,22 @@ async def list_agents(
     db: AsyncSession = Depends(get_db)
 ):
     stmt = select(AgentModel)
-    
+
     if status:
         stmt = stmt.where(AgentModel.status == status)
     if operating_system:
         stmt = stmt.where(AgentModel.operating_system == operating_system)
-        
+
     count_stmt = select(func.count()).select_from(stmt.subquery())
     total_result = await db.execute(count_stmt)
     total = total_result.scalar_one()
-    
+
     stmt = stmt.order_by(AgentModel.registered_at.desc())
     stmt = stmt.offset((page - 1) * page_size).limit(page_size)
-    
+
     result = await db.execute(stmt)
     items = result.scalars().all()
-    
+
     return PaginatedResponse(
         items=items,
         page=page,

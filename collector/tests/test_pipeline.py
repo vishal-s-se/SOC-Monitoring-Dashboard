@@ -27,7 +27,7 @@ async def setup_agent(client: AsyncClient, db: AsyncSession):
         "metadata": {"custom": "tag"}
     }
     await client.post("/api/v1/agent/register", json=payload, headers=AUTH_HEADERS)
-    
+
     # Get the agent from db
     stmt = select(Agent).where(Agent.agent_id == agent_id)
     result = await db.execute(stmt)
@@ -51,7 +51,7 @@ async def test_valid_event_pipeline(client: AsyncClient, db: AsyncSession, setup
             "Protocol": "tcp"
         }
     })
-    
+
     event_req = {
         "event_id": event_id,
         "agent_id": setup_agent.agent_id,
@@ -62,10 +62,10 @@ async def test_valid_event_pipeline(client: AsyncClient, db: AsyncSession, setup
         "payload": windows_payload,
         "metadata": {"test": "metadata"}
     }
-    
+
     res = await client.post("/api/v1/agent/events", json=event_req, headers=AUTH_HEADERS)
     assert res.status_code == 202
-    
+
     # Check RawLog
     stmt = select(RawLog).where(RawLog.event_identifier == event_id)
     result = await db.execute(stmt)
@@ -74,7 +74,7 @@ async def test_valid_event_pipeline(client: AsyncClient, db: AsyncSession, setup
     assert raw.raw_payload == windows_payload
     assert raw.ingestion_status == "PROCESSED"
     assert "collector_received_at" in raw.metadata_
-    
+
     # Check Normalized Event
     stmt = select(Event).where(Event.event_id == event_id)
     result = await db.execute(stmt)
@@ -95,7 +95,7 @@ async def test_linux_event_parsing(client: AsyncClient, db: AsyncSession, setup_
         "message": "Accepted publickey for admin_user from 10.0.0.50 port 50130 ssh2",
         "process": "sshd"
     })
-    
+
     event_req = {
         "event_id": event_id,
         "agent_id": setup_agent.agent_id,
@@ -105,14 +105,14 @@ async def test_linux_event_parsing(client: AsyncClient, db: AsyncSession, setup_
         "source": "syslog",
         "payload": linux_payload
     }
-    
+
     res = await client.post("/api/v1/agent/events", json=event_req, headers=AUTH_HEADERS)
     assert res.status_code == 202
-    
+
     stmt = select(Event).where(Event.event_id == event_id)
     result = await db.execute(stmt)
     evt = result.scalar_one()
-    
+
     assert evt.event_category == "linux"
     assert evt.event_type == "ssh_login"
     assert evt.action == "login_success"
@@ -143,15 +143,15 @@ async def test_duplicate_event_handling(client: AsyncClient, db: AsyncSession, s
         "source": "test",
         "payload": "{}"
     }
-    
+
     # First insert
     res1 = await client.post("/api/v1/agent/events", json=event_req, headers=AUTH_HEADERS)
     assert res1.status_code == 202
-    
+
     # Second insert
     res2 = await client.post("/api/v1/agent/events", json=event_req, headers=AUTH_HEADERS)
     assert res2.status_code == 202 # Should ignore duplicate but return 202
-    
+
     # Ensure only 1 event and 1 raw log
     stmt = select(RawLog).where(RawLog.event_identifier == event_id)
     result = await db.execute(stmt)
@@ -171,10 +171,10 @@ async def test_unsupported_or_malformed_json_payload(client: AsyncClient, db: As
         "source": "custom",
         "payload": "NOT_JSON!!!"
     }
-    
+
     res = await client.post("/api/v1/agent/events", json=event_req, headers=AUTH_HEADERS)
     assert res.status_code == 202
-    
+
     # Check normalized event has defaults and didn't crash
     stmt = select(Event).where(Event.event_id == event_id)
     result = await db.execute(stmt)
@@ -196,14 +196,14 @@ async def test_missing_optional_fields_and_metadata(client: AsyncClient, db: Asy
         "payload": "{}"
         # Missing operating_system and metadata
     }
-    
+
     res = await client.post("/api/v1/agent/events", json=event_req, headers=AUTH_HEADERS)
     assert res.status_code == 202
-    
+
     stmt = select(Event).where(Event.event_id == event_id)
     result = await db.execute(stmt)
     evt = result.scalar_one()
-    
+
     # Should inherit OS from agent
     assert evt.operating_system == setup_agent.operating_system
     # Should still get collector metadata enriched
@@ -218,16 +218,16 @@ async def test_multiple_agents(client: AsyncClient, db: AsyncSession):
     # Agent 2
     a2_id = str(uuid.uuid4())
     await client.post("/api/v1/agent/register", json={"agent_id": a2_id, "hostname": "h2", "operating_system": "linux", "agent_version": "1.0"}, headers=AUTH_HEADERS)
-    
+
     res1 = await client.post("/api/v1/agent/events", json={
-        "event_id": str(uuid.uuid4()), "agent_id": a1_id, "hostname": "h1", 
+        "event_id": str(uuid.uuid4()), "agent_id": a1_id, "hostname": "h1",
         "timestamp": datetime.now(timezone.utc).isoformat(), "event_type": "t1", "source": "s1", "payload": "{}"
     }, headers=AUTH_HEADERS)
-    
+
     res2 = await client.post("/api/v1/agent/events", json={
-        "event_id": str(uuid.uuid4()), "agent_id": a2_id, "hostname": "h2", 
+        "event_id": str(uuid.uuid4()), "agent_id": a2_id, "hostname": "h2",
         "timestamp": datetime.now(timezone.utc).isoformat(), "event_type": "t2", "source": "s2", "payload": "{}"
     }, headers=AUTH_HEADERS)
-    
+
     assert res1.status_code == 202
     assert res2.status_code == 202

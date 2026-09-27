@@ -22,7 +22,7 @@ load_dotenv(".env.test")
 
 # Test DB settings
 TEST_DATABASE_URL = os.getenv(
-    "TEST_DATABASE_URL", 
+    "TEST_DATABASE_URL",
     settings.DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://")
 )
 if "soc_monitor_test" not in TEST_DATABASE_URL:
@@ -42,7 +42,7 @@ async def db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
-    
+
     async with TestingSessionLocal() as session:
         yield session
 
