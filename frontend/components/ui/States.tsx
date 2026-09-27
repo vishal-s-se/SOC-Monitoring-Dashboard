@@ -28,7 +28,7 @@ export function ErrorState({ message, retry }: { message: string, retry?: () => 
       <h3 className="text-lg font-medium text-red-400">Error</h3>
       <p className="mt-1 text-sm text-red-300/70">{message}</p>
       {retry && (
-        <button 
+        <button
           onClick={retry}
           className="mt-4 px-4 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded text-sm transition-colors"
         >

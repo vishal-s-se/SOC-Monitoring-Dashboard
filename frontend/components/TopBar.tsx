@@ -31,7 +31,7 @@ export default function TopBar() {
           SOC Monitor <span className="text-xs text-gray-400 bg-gray-800 px-2 py-1 rounded ml-2">MAIN ENVIRONMENT</span>
         </div>
       </div>
-      
+
       <div className="flex items-center space-x-6">
         {/* REST API Status */}
         <div className="flex items-center space-x-2 text-sm">
@@ -47,8 +47,8 @@ export default function TopBar() {
           <span className="text-gray-400">Real-Time:</span>
           <div className="flex items-center space-x-1">
             <span className={`h-2 w-2 rounded-full ${
-              wsStatus === 'CONNECTED' ? 'bg-green-500' 
-              : wsStatus === 'ERROR' ? 'bg-red-500' 
+              wsStatus === 'CONNECTED' ? 'bg-green-500'
+              : wsStatus === 'ERROR' ? 'bg-red-500'
               : 'bg-yellow-500'
             }`} />
             <span className="text-gray-200">{wsStatus}</span>

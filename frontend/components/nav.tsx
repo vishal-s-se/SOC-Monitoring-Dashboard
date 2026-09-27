@@ -37,11 +37,11 @@ export default function Nav() {
             const isActive = pathname === item.href
             return (
               <li key={item.name}>
-                <Link 
+                <Link
                   href={item.href}
                   className={`block px-4 py-2 text-sm transition-colors ${
-                    isActive 
-                      ? 'bg-blue-600 text-white font-medium' 
+                    isActive
+                      ? 'bg-blue-600 text-white font-medium'
                       : 'text-gray-300 hover:bg-gray-800 hover:text-white'
                   }`}
                 >

@@ -1,6 +1,6 @@
 export function SeverityBadge({ severity }: { severity: string }) {
   const s = severity.toUpperCase();
-  
+
   let colorClass = "bg-gray-800 text-gray-300";
   if (s === "CRITICAL") {
     colorClass = "bg-red-600 text-white border-red-500";

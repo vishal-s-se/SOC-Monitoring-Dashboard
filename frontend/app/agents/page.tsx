@@ -34,10 +34,10 @@ export default function AgentsPage() {
   useEffect(() => {
     if (lastMessage && lastMessage.type === 'agent_status_changed') {
       const data = lastMessage.data
-      setAgents(prev => 
+      setAgents(prev =>
         prev.map(a => a.agent_id === data.agent_id ? { ...a, status: data.status } : a)
       )
-      
+
       // If it's a completely new agent not in our list, we might want to just reload
       // But for simplicity, we just update existing rows.
     }
@@ -48,15 +48,15 @@ export default function AgentsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader 
-        title="Agents" 
-        description="Manage SOC telemetry collectors deployed across your fleet" 
+      <PageHeader
+        title="Agents"
+        description="Manage SOC telemetry collectors deployed across your fleet"
       />
 
       <Card>
         <CardContent className="p-0">
-          <DataTable 
-            data={agents} 
+          <DataTable
+            data={agents}
             keyExtractor={(r) => r.agent_id}
             columns={[
               { key: 'status', title: 'Status', render: (r) => <StatusBadge status={r.status} /> },

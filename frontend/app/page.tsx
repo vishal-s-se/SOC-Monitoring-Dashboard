@@ -67,9 +67,9 @@ export default function OverviewPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader 
-        title="SOC Overview" 
-        description="High-level metrics and recent security activity" 
+      <PageHeader
+        title="SOC Overview"
+        description="High-level metrics and recent security activity"
       />
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -80,7 +80,7 @@ export default function OverviewPage() {
             <p className="text-sm text-green-400 mt-1">{stats.onlineAgents} online</p>
           </CardContent>
         </Card>
-        
+
         <Card>
           <CardContent className="py-6">
             <h3 className="text-gray-400 text-sm font-medium">Open Alerts</h3>
@@ -110,8 +110,8 @@ export default function OverviewPage() {
         <Card>
           <CardHeader title="Recent Alerts" />
           <CardContent className="p-0">
-            <DataTable 
-              data={recentAlerts} 
+            <DataTable
+              data={recentAlerts}
               keyExtractor={(r) => r.alert_id}
               columns={[
                 { key: 'severity', title: 'Severity', render: (r) => <SeverityBadge severity={r.severity} /> },
@@ -125,8 +125,8 @@ export default function OverviewPage() {
         <Card>
           <CardHeader title="Recent Events" />
           <CardContent className="p-0">
-            <DataTable 
-              data={recentEvents} 
+            <DataTable
+              data={recentEvents}
               keyExtractor={(r) => r.event_id}
               columns={[
                 { key: 'timestamp', title: 'Time', render: (r) => new Date(r.timestamp).toLocaleTimeString() },

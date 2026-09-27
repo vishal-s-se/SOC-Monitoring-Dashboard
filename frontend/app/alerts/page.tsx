@@ -42,7 +42,7 @@ export default function AlertsPage() {
         })
       } else if (lastMessage.type === 'alert_updated') {
         const updatedAlert = lastMessage.data
-        setAlerts(prev => 
+        setAlerts(prev =>
           prev.map(a => a.alert_id === updatedAlert.alert_id ? { ...a, ...updatedAlert } : a)
         )
       }
@@ -54,15 +54,15 @@ export default function AlertsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader 
-        title="Alerts" 
-        description="Security detections requiring attention" 
+      <PageHeader
+        title="Alerts"
+        description="Security detections requiring attention"
       />
 
       <Card>
         <CardContent className="p-0">
-          <DataTable 
-            data={alerts} 
+          <DataTable
+            data={alerts}
             keyExtractor={(r) => r.alert_id}
             columns={[
               { key: 'first_seen', title: 'Time', render: (r) => new Date(r.first_seen || r.timestamp).toLocaleString() },
@@ -73,7 +73,7 @@ export default function AlertsPage() {
               { key: 'actions', title: '', render: (r) => (
                 <div className="flex space-x-2 justify-end">
                   {r.status === 'OPEN' && (
-                    <button 
+                    <button
                       onClick={async (e) => {
                         e.stopPropagation();
                         try {
@@ -89,7 +89,7 @@ export default function AlertsPage() {
                     </button>
                   )}
                   {(r.status === 'OPEN' || r.status === 'ACKNOWLEDGED') && (
-                    <button 
+                    <button
                       onClick={async (e) => {
                         e.stopPropagation();
                         try {

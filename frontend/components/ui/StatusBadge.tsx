@@ -1,6 +1,6 @@
 export function StatusBadge({ status }: { status: string }) {
   const s = status.toUpperCase();
-  
+
   let colorClass = "bg-gray-800 text-gray-300";
   if (s === "ONLINE" || s === "OPEN" || s === "NEW") {
     colorClass = "bg-green-500/10 text-green-400 border-green-500/20";

@@ -50,15 +50,15 @@ export default function LiveEventsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader 
-        title="Live Events" 
-        description="Real-time normalized event stream" 
+      <PageHeader
+        title="Live Events"
+        description="Real-time normalized event stream"
         actions={
-          <button 
+          <button
             onClick={() => setIsLive(!isLive)}
             className={`px-4 py-2 rounded text-sm font-medium transition-colors ${
-              isLive 
-                ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30 hover:bg-blue-600/30' 
+              isLive
+                ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30 hover:bg-blue-600/30'
                 : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
             }`}
           >
@@ -69,8 +69,8 @@ export default function LiveEventsPage() {
 
       <Card>
         <CardContent className="p-0">
-          <DataTable 
-            data={events} 
+          <DataTable
+            data={events}
             keyExtractor={(r) => r.event_id}
             columns={[
               { key: 'timestamp', title: 'Time', render: (r) => new Date(r.timestamp).toLocaleString() },

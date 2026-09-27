@@ -33,15 +33,15 @@ export default function HostsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader 
-        title="Hosts" 
-        description="Endpoint inventory" 
+      <PageHeader
+        title="Hosts"
+        description="Endpoint inventory"
       />
 
       <Card>
         <CardContent className="p-0">
-          <DataTable 
-            data={hosts} 
+          <DataTable
+            data={hosts}
             keyExtractor={(r) => r.id}
             columns={[
               { key: 'hostname', title: 'Hostname', render: (r) => <span className="font-medium text-gray-200">{r.hostname}</span> },
