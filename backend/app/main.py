@@ -5,12 +5,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from .core.config import settings
 from .core.logging import logger
+from contextlib import asynccontextmanager
 from .db.session import get_db
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    from backend.app.engine.event_bus import event_bus
+    # Startup
+    event_bus.start()
+    yield
+    # Shutdown
+    event_bus.stop()
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
     description="SOC Monitor Backend API Phase 1",
+    lifespan=lifespan,
 )
 
 # CORS Foundation
@@ -58,13 +69,3 @@ async def db_health_check(db: AsyncSession = Depends(get_db)):
 
 from backend.app.api.v1.api import api_router
 app.include_router(api_router, prefix=settings.API_V1_STR)
-
-from backend.app.engine.event_bus import event_bus
-
-@app.on_event("startup")
-async def startup_event():
-    event_bus.start()
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    event_bus.stop()
