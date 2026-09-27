@@ -750,3 +750,161 @@ async def test_attack_timeline_event_relationships_phase_7d4(client: AsyncClient
     # 11. Test Invalid Investigation ID returns 404
     invalid_res = await client.get('/api/v1/attack-timeline/?investigation_id=99999999')
     assert invalid_res.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_attack_timeline_filtering_controls_phase_7d5(client: AsyncClient, sample_data: dict, db: AsyncSession):
+    now = datetime.now(timezone.utc)
+
+    # 1. Create a suite of distinct events for multi-filter testing
+    ev_auth = Event(
+        event_id=str(uuid.uuid4()),
+        agent_id=sample_data['agent'].id,
+        host_id=sample_data['host'].id,
+        hostname='auth-srv-01',
+        source_ip='192.168.10.5',
+        destination_ip='192.168.10.1',
+        source_port=54321,
+        destination_port=22,
+        protocol='TCP',
+        username='jdoe',
+        event_category='authentication',
+        event_type='login_success',
+        severity='LOW',
+        timestamp=now - timedelta(hours=2)
+    )
+    ev_proc = Event(
+        event_id=str(uuid.uuid4()),
+        agent_id=sample_data['agent'].id,
+        host_id=sample_data['host'].id,
+        hostname='workstation-42',
+        source_ip='192.168.10.88',
+        destination_ip='10.0.0.99',
+        source_port=49152,
+        destination_port=443,
+        protocol='TCP',
+        username='mal_actor',
+        event_category='process',
+        event_type='suspicious_ps',
+        severity='CRITICAL',
+        timestamp=now - timedelta(hours=1)
+    )
+    ev_net = Event(
+        event_id=str(uuid.uuid4()),
+        agent_id=sample_data['agent'].id,
+        host_id=sample_data['host'].id,
+        hostname='gateway-fw',
+        source_ip='10.0.0.99',
+        destination_ip='192.168.10.88',
+        source_port=443,
+        destination_port=49152,
+        protocol='TCP',
+        username=None,
+        event_category='network',
+        event_type='drop_traffic',
+        severity='MEDIUM',
+        timestamp=now - timedelta(minutes=30)
+    )
+    db.add_all([ev_auth, ev_proc, ev_net])
+    await db.commit()
+
+    # 2. Test Time-Range Filtering
+    start_t = (now - timedelta(hours=3)).isoformat()
+    end_t = (now - timedelta(hours=1, minutes=30)).isoformat()
+    res_time = await client.get('/api/v1/attack-timeline/', params={'start_time': start_t, 'end_time': end_t})
+    assert res_time.status_code == 200
+    time_ids = [i['id'] for i in res_time.json()['items']]
+    assert ev_auth.id in time_ids
+    assert ev_proc.id not in time_ids
+    assert ev_net.id not in time_ids
+
+    # 3. Test Invalid Time-Range (end < start) -> 400
+    res_inv_time = await client.get('/api/v1/attack-timeline/', params={'start_time': end_t, 'end_time': start_t})
+    assert res_inv_time.status_code == 400
+    assert "end_time must be after start_time" in res_inv_time.json()['detail']
+
+    # 4. Test Oversized Time-Range (> 90 days) -> 400
+    very_old = (now - timedelta(days=120)).isoformat()
+    res_oversized = await client.get('/api/v1/attack-timeline/', params={'start_time': very_old, 'end_time': now.isoformat()})
+    assert res_oversized.status_code == 400
+    assert "Time range cannot exceed 90 days" in res_oversized.json()['detail']
+
+    # 5. Test Username Filtering
+    res_user = await client.get('/api/v1/attack-timeline/?username=mal_actor')
+    assert res_user.status_code == 200
+    assert all(i['username'] == 'mal_actor' for i in res_user.json()['items'])
+    assert any(i['id'] == ev_proc.id for i in res_user.json()['items'])
+
+    # 6. Test Source IP & Destination IP Filtering
+    res_src_ip = await client.get('/api/v1/attack-timeline/?source_ip=192.168.10.88')
+    assert res_src_ip.status_code == 200
+    assert all(i['source_ip'] == '192.168.10.88' for i in res_src_ip.json()['items'])
+
+    res_dst_ip = await client.get('/api/v1/attack-timeline/?destination_ip=10.0.0.99')
+    assert res_dst_ip.status_code == 200
+    assert all(i['destination_ip'] == '10.0.0.99' for i in res_dst_ip.json()['items'])
+
+    # 7. Test Network Port & Protocol Filtering
+    res_port = await client.get('/api/v1/attack-timeline/?destination_port=22&protocol=TCP')
+    assert res_port.status_code == 200
+    assert any(i['id'] == ev_auth.id for i in res_port.json()['items'])
+
+    # 8. Test Event Category & Severity Filtering
+    res_cat_sev = await client.get('/api/v1/attack-timeline/?event_category=process&severity=CRITICAL')
+    assert res_cat_sev.status_code == 200
+    assert len(res_cat_sev.json()['items']) >= 1
+    assert all(i['event_category'] == 'process' and i['severity'] == 'CRITICAL' for i in res_cat_sev.json()['items'])
+
+    # 9. Test Server-Side Search
+    res_search_user = await client.get('/api/v1/attack-timeline/?search=jdoe')
+    assert res_search_user.status_code == 200
+    assert any(i['id'] == ev_auth.id for i in res_search_user.json()['items'])
+
+    res_search_cat = await client.get('/api/v1/attack-timeline/?search=authentication')
+    assert res_search_cat.status_code == 200
+    assert any(i['id'] == ev_auth.id for i in res_search_cat.json()['items'])
+
+    res_search_type = await client.get('/api/v1/attack-timeline/?search=suspicious_ps')
+    assert res_search_type.status_code == 200
+    assert any(i['id'] == ev_proc.id for i in res_search_type.json()['items'])
+
+    # 10. Test Combined Multi-Filters
+    res_combined = await client.get(
+        f'/api/v1/attack-timeline/?hostname=workstation-42&username=mal_actor&severity=CRITICAL&event_category=process'
+    )
+    assert res_combined.status_code == 200
+    assert len(res_combined.json()['items']) == 1
+    assert res_combined.json()['items'][0]['id'] == ev_proc.id
+
+    # 11. Test Empty Result State with non-matching filter
+    res_empty = await client.get('/api/v1/attack-timeline/?hostname=nonexistent-host-999')
+    assert res_empty.status_code == 200
+    assert res_empty.json()['total'] == 0
+    assert len(res_empty.json()['items']) == 0
+
+    # 12. Test Sorting (ASC vs DESC)
+    res_asc = await client.get('/api/v1/attack-timeline/?order=asc')
+    assert res_asc.status_code == 200
+    asc_items = res_asc.json()['items']
+    if len(asc_items) >= 2:
+        assert asc_items[0]['timestamp'] <= asc_items[-1]['timestamp']
+
+    res_desc = await client.get('/api/v1/attack-timeline/?order=desc')
+    assert res_desc.status_code == 200
+    desc_items = res_desc.json()['items']
+    if len(desc_items) >= 2:
+        assert desc_items[0]['timestamp'] >= desc_items[-1]['timestamp']
+
+    # 13. Test Pagination Controls
+    res_page = await client.get('/api/v1/attack-timeline/?page=1&page_size=2')
+    assert res_page.status_code == 200
+    data_page = res_page.json()
+    assert data_page['page'] == 1
+    assert data_page['page_size'] == 2
+    assert len(data_page['items']) <= 2
+    assert data_page['total'] >= 3
+
+    # 14. Summary Metrics includes categories and types
+    assert "summary" in data_page and data_page["summary"] is not None
+    assert len(data_page["summary"]["unique_event_categories"]) >= 1
+    assert len(data_page["summary"]["unique_event_types"]) >= 1

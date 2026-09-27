@@ -61,6 +61,8 @@ class TimelineSummaryMetrics(BaseModel):
     unique_users: List[str] = []
     unique_source_ips: List[str] = []
     unique_destination_ips: List[str] = []
+    unique_event_categories: List[str] = []
+    unique_event_types: List[str] = []
 
 class TimelineResponse(PaginatedResponse[TimelineItem]):
     investigation_info: Optional[InvestigationTimelineMeta] = None

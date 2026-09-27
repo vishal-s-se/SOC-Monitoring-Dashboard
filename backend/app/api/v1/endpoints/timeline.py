@@ -98,6 +98,9 @@ async def get_attack_timeline(
     username: Optional[str] = None,
     source_ip: Optional[str] = None,
     destination_ip: Optional[str] = None,
+    source_port: Optional[int] = None,
+    destination_port: Optional[int] = None,
+    protocol: Optional[str] = None,
     event_type: Optional[str] = None,
     event_category: Optional[str] = None,
     severity: Optional[str] = None,
@@ -109,8 +112,13 @@ async def get_attack_timeline(
     order: Optional[str] = Query("desc", pattern="^(asc|desc)$"),
     db: AsyncSession = Depends(get_db)
 ):
-    if start_time and end_time and end_time < start_time:
-        raise HTTPException(status_code=400, detail="end_time must be after start_time")
+    if start_time and end_time:
+        if end_time < start_time:
+            raise HTTPException(status_code=400, detail="end_time must be after start_time")
+        s = start_time.replace(tzinfo=None) if start_time.tzinfo else start_time
+        e = end_time.replace(tzinfo=None) if end_time.tzinfo else end_time
+        if (e - s) > timedelta(days=90):
+            raise HTTPException(status_code=400, detail="Time range cannot exceed 90 days")
 
     direct_event_ids: Set[int] = set()
     alert_trigger_event_ids: Set[int] = set()
@@ -404,6 +412,12 @@ async def get_attack_timeline(
         stmt = stmt.where(EventModel.source_ip == source_ip)
     if destination_ip:
         stmt = stmt.where(EventModel.destination_ip == destination_ip)
+    if source_port is not None:
+        stmt = stmt.where(EventModel.source_port == source_port)
+    if destination_port is not None:
+        stmt = stmt.where(EventModel.destination_port == destination_port)
+    if protocol:
+        stmt = stmt.where(EventModel.protocol.ilike(protocol))
     if event_type:
         stmt = stmt.where(EventModel.event_type == event_type)
     if event_category:
@@ -416,12 +430,13 @@ async def get_attack_timeline(
         stmt = stmt.where(EventModel.timestamp <= end_time)
 
     if search:
-        search_term = f"%{search}%"
+        search_term = f"%{search.strip()}%"
         stmt = stmt.where(or_(
             EventModel.username.ilike(search_term),
             EventModel.hostname.ilike(search_term),
             EventModel.host.has(HostModel.hostname.ilike(search_term)),
             EventModel.event_type.ilike(search_term),
+            EventModel.event_category.ilike(search_term),
             EventModel.source_type.ilike(search_term),
             EventModel.event_id.ilike(search_term),
             EventModel.source_ip.ilike(search_term),
@@ -619,6 +634,8 @@ async def get_attack_timeline(
     unique_users = sorted(list({ev.username for ev in events if ev.username}))
     unique_source_ips = sorted(list({ev.source_ip for ev in events if ev.source_ip}))
     unique_destination_ips = sorted(list({ev.destination_ip for ev in events if ev.destination_ip}))
+    unique_categories = sorted(list({ev.event_category for ev in events if ev.event_category}))
+    unique_types = sorted(list({ev.event_type for ev in events if ev.event_type}))
 
     summary_metrics = TimelineSummaryMetrics(
         total_events=total,
@@ -629,7 +646,9 @@ async def get_attack_timeline(
         unique_agents=unique_agents,
         unique_users=unique_users,
         unique_source_ips=unique_source_ips,
-        unique_destination_ips=unique_destination_ips
+        unique_destination_ips=unique_destination_ips,
+        unique_event_categories=unique_categories,
+        unique_event_types=unique_types
     )
 
     return TimelineResponse(

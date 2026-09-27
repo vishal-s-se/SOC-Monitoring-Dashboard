@@ -75,6 +75,8 @@ interface SummaryMetrics {
   unique_users: string[]
   unique_source_ips: string[]
   unique_destination_ips: string[]
+  unique_event_categories?: string[]
+  unique_event_types?: string[]
 }
 
 function AttackTimelineContent() {
@@ -83,16 +85,29 @@ function AttackTimelineContent() {
 
   const investigationIdParam = searchParams.get('investigation_id')
   const alertIdParam = searchParams.get('alert_id')
-  const hostParam = searchParams.get('hostname')
-  const agentParam = searchParams.get('agent_id')
+
+  // URL state reading
+  const searchParam = searchParams.get('search') || ''
+  const hostParam = searchParams.get('hostname') || ''
+  const agentParam = searchParams.get('agent_id') || ''
+  const userParam = searchParams.get('username') || ''
+  const srcIpParam = searchParams.get('source_ip') || ''
+  const dstIpParam = searchParams.get('destination_ip') || ''
+  const catParam = searchParams.get('event_category') || ''
+  const sevParam = searchParams.get('severity') || ''
+  const provParam = (searchParams.get('provenance') as any) || 'ALL'
+  const timePresetParam = (searchParams.get('time_preset') as TimePreset) || (investigationIdParam || alertIdParam ? 'all' : '1h')
+  const orderParam = (searchParams.get('order') as 'desc' | 'asc') || 'desc'
+  const pageParam = Math.max(1, Number(searchParams.get('page')) || 1)
+  const pageSizeParam = Number(searchParams.get('page_size')) || 50
 
   const [items, setItems] = useState<TimelineItem[]>([])
   const [investigationInfo, setInvestigationInfo] = useState<InvestigationInfo | null>(null)
   const [summaryMetrics, setSummaryMetrics] = useState<SummaryMetrics | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [page, setPage] = useState(1)
-  const [pageSize] = useState(30)
+  const [page, setPage] = useState(pageParam)
+  const [pageSize, setPageSize] = useState(pageSizeParam)
   const [total, setTotal] = useState(0)
 
   // View & Grouping
@@ -100,19 +115,19 @@ function AttackTimelineContent() {
   const [groupBy, setGroupBy] = useState<GroupByOption>('none')
 
   // Filters
-  const [timePreset, setTimePreset] = useState<TimePreset>(investigationIdParam || alertIdParam ? 'all' : '1h')
-  const [customStart, setCustomStart] = useState('')
-  const [customEnd, setCustomEnd] = useState('')
-  const [order, setOrder] = useState<'desc' | 'asc'>('desc')
-  const [provenanceFilter, setProvenanceFilter] = useState<'ALL' | 'DIRECT_EVIDENCE' | 'CORRELATED_EVENT'>('ALL')
-  const [hostname, setHostname] = useState(hostParam || '')
-  const [agentId, setAgentId] = useState(agentParam || '')
-  const [username, setUsername] = useState('')
-  const [sourceIp, setSourceIp] = useState('')
-  const [destinationIp, setDestinationIp] = useState('')
-  const [eventCategory, setEventCategory] = useState('')
-  const [severity, setSeverity] = useState('')
-  const [search, setSearch] = useState('')
+  const [timePreset, setTimePreset] = useState<TimePreset>(timePresetParam)
+  const [customStart, setCustomStart] = useState(searchParams.get('start_time') || '')
+  const [customEnd, setCustomEnd] = useState(searchParams.get('end_time') || '')
+  const [order, setOrder] = useState<'desc' | 'asc'>(orderParam)
+  const [provenanceFilter, setProvenanceFilter] = useState<'ALL' | 'DIRECT_EVIDENCE' | 'CORRELATED_EVENT' | 'ALERT_CONTEXT'>(provParam)
+  const [hostname, setHostname] = useState(hostParam)
+  const [agentId, setAgentId] = useState(agentParam)
+  const [username, setUsername] = useState(userParam)
+  const [sourceIp, setSourceIp] = useState(srcIpParam)
+  const [destinationIp, setDestinationIp] = useState(dstIpParam)
+  const [eventCategory, setEventCategory] = useState(catParam)
+  const [severity, setSeverity] = useState(sevParam)
+  const [search, setSearch] = useState(searchParam)
 
   // Modals
   const [selectedEvent, setSelectedEvent] = useState<any>(null)
@@ -123,6 +138,51 @@ function AttackTimelineContent() {
   // Live real-time
   const [isLive, setIsLive] = useState(true)
   const { lastMessage, status: wsStatus } = useWebSocket()
+
+  // URL State Synchronizer
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams()
+    if (investigationIdParam) params.set('investigation_id', investigationIdParam)
+    if (alertIdParam) params.set('alert_id', alertIdParam)
+    if (search.trim()) params.set('search', search.trim())
+    if (hostname.trim()) params.set('hostname', hostname.trim())
+    if (agentId.trim()) params.set('agent_id', agentId.trim())
+    if (username.trim()) params.set('username', username.trim())
+    if (sourceIp.trim()) params.set('source_ip', sourceIp.trim())
+    if (destinationIp.trim()) params.set('destination_ip', destinationIp.trim())
+    if (eventCategory.trim()) params.set('event_category', eventCategory.trim())
+    if (severity.trim()) params.set('severity', severity.trim())
+    if (provenanceFilter !== 'ALL') params.set('provenance', provenanceFilter)
+    if (timePreset !== (investigationIdParam || alertIdParam ? 'all' : '1h')) params.set('time_preset', timePreset)
+    if (customStart) params.set('start_time', customStart)
+    if (customEnd) params.set('end_time', customEnd)
+    if (order !== 'desc') params.set('order', order)
+    if (page > 1) params.set('page', String(page))
+    if (pageSize !== 50) params.set('page_size', String(pageSize))
+
+    const queryStr = params.toString()
+    const newUrl = queryStr ? `/attack-timeline?${queryStr}` : '/attack-timeline'
+    window.history.replaceState(null, '', newUrl)
+  }, [
+    investigationIdParam,
+    alertIdParam,
+    search,
+    hostname,
+    agentId,
+    username,
+    sourceIp,
+    destinationIp,
+    eventCategory,
+    severity,
+    provenanceFilter,
+    timePreset,
+    customStart,
+    customEnd,
+    order,
+    page,
+    pageSize
+  ])
 
   const calculateTimeBounds = useCallback((preset: TimePreset): { start?: string; end?: string } => {
     if (preset === 'all') return {}
@@ -215,15 +275,62 @@ function AttackTimelineContent() {
     fetchTimeline()
   }, [fetchTimeline])
 
-  // WebSocket Live Updates
+  // WebSocket Live Updates (with strict filter matching)
   useEffect(() => {
     if (!isLive || !lastMessage || lastMessage.type !== 'new_event') return
     const incoming = lastMessage.data
     if (!incoming || !incoming.event_id) return
 
     setItems(prev => {
+      // 1. Prevent duplicates
       if (prev.some(item => item.event_id === incoming.event_id || item.id === incoming.id)) {
         return prev
+      }
+
+      // 2. Active filter matching checks
+      if (hostname.trim()) {
+        const h = (incoming.hostname || '').toLowerCase()
+        if (!h.includes(hostname.trim().toLowerCase())) return prev
+      }
+      if (agentId.trim()) {
+        if (String(incoming.agent_id) !== agentId.trim()) return prev
+      }
+      if (username.trim()) {
+        const u = (incoming.username || '').toLowerCase()
+        if (!u.includes(username.trim().toLowerCase())) return prev
+      }
+      if (sourceIp.trim()) {
+        if (incoming.source_ip !== sourceIp.trim()) return prev
+      }
+      if (destinationIp.trim()) {
+        if (incoming.destination_ip !== destinationIp.trim()) return prev
+      }
+      if (eventCategory.trim()) {
+        if ((incoming.event_category || '').toLowerCase() !== eventCategory.trim().toLowerCase()) return prev
+      }
+      if (severity.trim()) {
+        if ((incoming.severity || '').toUpperCase() !== severity.trim().toUpperCase()) return prev
+      }
+      if (search.trim()) {
+        const s = search.trim().toLowerCase()
+        const match = (
+          (incoming.username || '').toLowerCase().includes(s) ||
+          (incoming.hostname || '').toLowerCase().includes(s) ||
+          (incoming.event_type || '').toLowerCase().includes(s) ||
+          (incoming.event_category || '').toLowerCase().includes(s) ||
+          (incoming.event_id || '').toLowerCase().includes(s) ||
+          (incoming.source_ip || '').toLowerCase().includes(s) ||
+          (incoming.destination_ip || '').toLowerCase().includes(s)
+        )
+        if (!match) return prev
+      }
+
+      // 3. Time range matching
+      const { start, end } = calculateTimeBounds(timePreset)
+      if (incoming.timestamp) {
+        const incTime = new Date(incoming.timestamp).getTime()
+        if (start && incTime < new Date(start).getTime()) return prev
+        if (end && incTime > new Date(end).getTime()) return prev
       }
 
       let provenance = 'OTHER'
@@ -254,6 +361,9 @@ function AttackTimelineContent() {
       }
 
       if (provenanceFilter === 'DIRECT_EVIDENCE') {
+        return prev
+      }
+      if (provenanceFilter === 'CORRELATED_EVENT' && provenance !== 'CORRELATED_EVENT') {
         return prev
       }
 
@@ -296,7 +406,24 @@ function AttackTimelineContent() {
       }
     })
     setTotal(prev => prev + 1)
-  }, [lastMessage, isLive, order, pageSize, investigationIdParam, provenanceFilter])
+  }, [
+    lastMessage,
+    isLive,
+    order,
+    pageSize,
+    investigationIdParam,
+    provenanceFilter,
+    hostname,
+    agentId,
+    username,
+    sourceIp,
+    destinationIp,
+    eventCategory,
+    severity,
+    search,
+    timePreset,
+    calculateTimeBounds
+  ])
 
   const toggleExpand = (id: number) => {
     setExpandedItems(prev => {
@@ -362,6 +489,15 @@ function AttackTimelineContent() {
     setOrder('desc')
     setGroupBy('none')
     setPage(1)
+
+    // Context preservation in URL
+    if (investigationIdParam) {
+      window.history.replaceState(null, '', `/attack-timeline?investigation_id=${investigationIdParam}`)
+    } else if (alertIdParam) {
+      window.history.replaceState(null, '', `/attack-timeline?alert_id=${alertIdParam}`)
+    } else {
+      window.history.replaceState(null, '', '/attack-timeline')
+    }
   }
 
   // Grouped items calculation
@@ -788,7 +924,7 @@ function AttackTimelineContent() {
           )}
 
           {/* Grid Filters */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
             <div className="col-span-2">
               <label className="block text-[11px] text-gray-400 font-semibold mb-1">Search</label>
               <input
@@ -798,7 +934,7 @@ function AttackTimelineContent() {
                   setSearch(e.target.value)
                   setPage(1)
                 }}
-                placeholder="User, host, IP, event type..."
+                placeholder="User, host, IP, event type/ID..."
                 className="w-full bg-[#151518] border border-gray-800 rounded p-1.5 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-blue-500"
               />
             </div>
@@ -807,6 +943,7 @@ function AttackTimelineContent() {
               <label className="block text-[11px] text-gray-400 font-semibold mb-1">Hostname</label>
               <input
                 type="text"
+                list="host-datalist"
                 value={hostname}
                 onChange={e => {
                   setHostname(e.target.value)
@@ -815,12 +952,18 @@ function AttackTimelineContent() {
                 placeholder="e.g. dc-01"
                 className="w-full bg-[#151518] border border-gray-800 rounded p-1.5 text-xs text-white placeholder-gray-600 focus:outline-none"
               />
+              <datalist id="host-datalist">
+                {summaryMetrics?.unique_hosts?.map(h => (
+                  <option key={h} value={h} />
+                ))}
+              </datalist>
             </div>
 
             <div>
               <label className="block text-[11px] text-gray-400 font-semibold mb-1">Agent ID</label>
               <input
                 type="text"
+                list="agent-datalist"
                 value={agentId}
                 onChange={e => {
                   setAgentId(e.target.value)
@@ -829,12 +972,38 @@ function AttackTimelineContent() {
                 placeholder="Numeric ID"
                 className="w-full bg-[#151518] border border-gray-800 rounded p-1.5 text-xs text-white placeholder-gray-600 focus:outline-none"
               />
+              <datalist id="agent-datalist">
+                {summaryMetrics?.unique_agents?.map(a => (
+                  <option key={a} value={String(a)} />
+                ))}
+              </datalist>
+            </div>
+
+            <div>
+              <label className="block text-[11px] text-gray-400 font-semibold mb-1">Username</label>
+              <input
+                type="text"
+                list="user-datalist"
+                value={username}
+                onChange={e => {
+                  setUsername(e.target.value)
+                  setPage(1)
+                }}
+                placeholder="e.g. admin"
+                className="w-full bg-[#151518] border border-gray-800 rounded p-1.5 text-xs text-white placeholder-gray-600 focus:outline-none"
+              />
+              <datalist id="user-datalist">
+                {summaryMetrics?.unique_users?.map(u => (
+                  <option key={u} value={u} />
+                ))}
+              </datalist>
             </div>
 
             <div>
               <label className="block text-[11px] text-gray-400 font-semibold mb-1">Source IP</label>
               <input
                 type="text"
+                list="src-ip-datalist"
                 value={sourceIp}
                 onChange={e => {
                   setSourceIp(e.target.value)
@@ -843,12 +1012,18 @@ function AttackTimelineContent() {
                 placeholder="192.168.x.x"
                 className="w-full bg-[#151518] border border-gray-800 rounded p-1.5 text-xs text-white placeholder-gray-600 focus:outline-none"
               />
+              <datalist id="src-ip-datalist">
+                {summaryMetrics?.unique_source_ips?.map(ip => (
+                  <option key={ip} value={ip} />
+                ))}
+              </datalist>
             </div>
 
             <div>
               <label className="block text-[11px] text-gray-400 font-semibold mb-1">Dest IP</label>
               <input
                 type="text"
+                list="dst-ip-datalist"
                 value={destinationIp}
                 onChange={e => {
                   setDestinationIp(e.target.value)
@@ -857,12 +1032,18 @@ function AttackTimelineContent() {
                 placeholder="10.0.x.x"
                 className="w-full bg-[#151518] border border-gray-800 rounded p-1.5 text-xs text-white placeholder-gray-600 focus:outline-none"
               />
+              <datalist id="dst-ip-datalist">
+                {summaryMetrics?.unique_destination_ips?.map(ip => (
+                  <option key={ip} value={ip} />
+                ))}
+              </datalist>
             </div>
 
             <div>
               <label className="block text-[11px] text-gray-400 font-semibold mb-1">Category</label>
               <input
                 type="text"
+                list="cat-datalist"
                 value={eventCategory}
                 onChange={e => {
                   setEventCategory(e.target.value)
@@ -871,6 +1052,11 @@ function AttackTimelineContent() {
                 placeholder="auth, process..."
                 className="w-full bg-[#151518] border border-gray-800 rounded p-1.5 text-xs text-white placeholder-gray-600 focus:outline-none"
               />
+              <datalist id="cat-datalist">
+                {summaryMetrics?.unique_event_categories?.map(c => (
+                  <option key={c} value={c} />
+                ))}
+              </datalist>
             </div>
 
             <div>
@@ -891,7 +1077,101 @@ function AttackTimelineContent() {
                 <option value="INFO">INFO</option>
               </select>
             </div>
+
+            <div>
+              <label className="block text-[11px] text-gray-400 font-semibold mb-1">Provenance</label>
+              <select
+                value={provenanceFilter}
+                onChange={e => {
+                  setProvenanceFilter(e.target.value as any)
+                  setPage(1)
+                }}
+                className="w-full bg-[#151518] border border-gray-800 rounded p-1.5 text-xs text-white focus:outline-none"
+              >
+                <option value="ALL">All Evidence</option>
+                <option value="DIRECT_EVIDENCE">Direct Evidence</option>
+                <option value="CORRELATED_EVENT">Correlated Context</option>
+                <option value="ALERT_CONTEXT">Alert Context</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-[11px] text-gray-400 font-semibold mb-1">Page Size</label>
+              <select
+                value={pageSize}
+                onChange={e => {
+                  setPageSize(Number(e.target.value))
+                  setPage(1)
+                }}
+                className="w-full bg-[#151518] border border-gray-800 rounded p-1.5 text-xs text-white focus:outline-none"
+              >
+                <option value={25}>25 per page</option>
+                <option value={50}>50 per page</option>
+                <option value={100}>100 per page</option>
+              </select>
+            </div>
           </div>
+
+          {/* Active Filter Chips */}
+          {(search || hostname || agentId || username || sourceIp || destinationIp || eventCategory || severity || provenanceFilter !== 'ALL' || timePreset === 'custom') && (
+            <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-gray-800/40 text-xs">
+              <span className="text-[10px] uppercase font-semibold text-gray-500 mr-1">Active Filters:</span>
+              {search && (
+                <span className="bg-gray-800 text-gray-200 px-2 py-0.5 rounded-full flex items-center space-x-1">
+                  <span>Search: &quot;{search}&quot;</span>
+                  <button onClick={() => setSearch('')} className="hover:text-red-400">✕</button>
+                </span>
+              )}
+              {hostname && (
+                <span className="bg-gray-800 text-gray-200 px-2 py-0.5 rounded-full flex items-center space-x-1">
+                  <span>Host: {hostname}</span>
+                  <button onClick={() => setHostname('')} className="hover:text-red-400">✕</button>
+                </span>
+              )}
+              {agentId && (
+                <span className="bg-gray-800 text-gray-200 px-2 py-0.5 rounded-full flex items-center space-x-1">
+                  <span>Agent #{agentId}</span>
+                  <button onClick={() => setAgentId('')} className="hover:text-red-400">✕</button>
+                </span>
+              )}
+              {username && (
+                <span className="bg-gray-800 text-gray-200 px-2 py-0.5 rounded-full flex items-center space-x-1">
+                  <span>User: {username}</span>
+                  <button onClick={() => setUsername('')} className="hover:text-red-400">✕</button>
+                </span>
+              )}
+              {sourceIp && (
+                <span className="bg-gray-800 text-gray-200 px-2 py-0.5 rounded-full flex items-center space-x-1">
+                  <span>Src: {sourceIp}</span>
+                  <button onClick={() => setSourceIp('')} className="hover:text-red-400">✕</button>
+                </span>
+              )}
+              {destinationIp && (
+                <span className="bg-gray-800 text-gray-200 px-2 py-0.5 rounded-full flex items-center space-x-1">
+                  <span>Dst: {destinationIp}</span>
+                  <button onClick={() => setDestinationIp('')} className="hover:text-red-400">✕</button>
+                </span>
+              )}
+              {eventCategory && (
+                <span className="bg-gray-800 text-gray-200 px-2 py-0.5 rounded-full flex items-center space-x-1">
+                  <span>Cat: {eventCategory}</span>
+                  <button onClick={() => setEventCategory('')} className="hover:text-red-400">✕</button>
+                </span>
+              )}
+              {severity && (
+                <span className="bg-gray-800 text-gray-200 px-2 py-0.5 rounded-full flex items-center space-x-1">
+                  <span>Sev: {severity}</span>
+                  <button onClick={() => setSeverity('')} className="hover:text-red-400">✕</button>
+                </span>
+              )}
+              {provenanceFilter !== 'ALL' && (
+                <span className="bg-gray-800 text-gray-200 px-2 py-0.5 rounded-full flex items-center space-x-1">
+                  <span>Prov: {provenanceFilter}</span>
+                  <button onClick={() => setProvenanceFilter('ALL')} className="hover:text-red-400">✕</button>
+                </span>
+              )}
+            </div>
+          )}
 
           <div className="flex items-center justify-between text-xs text-gray-500 pt-2 border-t border-gray-800/50">
             <span>Showing {items.length} of {total} events</span>
@@ -911,16 +1191,28 @@ function AttackTimelineContent() {
       ) : error ? (
         <ErrorState message={error} retry={fetchTimeline} />
       ) : items.length === 0 ? (
-        <EmptyState
-          title="No Timeline Events Found"
-          description={
-            investigationIdParam
-              ? 'No timeline evidence is associated with this investigation for the selected criteria.'
-              : alertIdParam
-              ? 'No events match the selected alert context.'
-              : 'No security events match the selected time range and filters.'
-          }
-        />
+        <div className="bg-[#151518] border border-gray-800 rounded-lg p-8 text-center space-y-4">
+          <EmptyState
+            title="No Timeline Events Found"
+            description={
+              investigationIdParam
+                ? provenanceFilter === 'DIRECT_EVIDENCE'
+                  ? 'No direct evidence matches this time range and filter combination.'
+                  : provenanceFilter === 'CORRELATED_EVENT'
+                  ? 'No correlated context matches this filter.'
+                  : 'No timeline evidence is associated with this investigation for the selected criteria.'
+                : alertIdParam
+                ? 'No events match the selected alert context.'
+                : 'No security events match the selected time range and filters.'
+            }
+          />
+          <button
+            onClick={handleResetFilters}
+            className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs font-semibold transition-colors"
+          >
+            Reset Filters
+          </button>
+        </div>
       ) : (
         <div className="space-y-8">
           {groupedSections.map((section, sIdx) => (
