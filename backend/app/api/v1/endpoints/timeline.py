@@ -14,6 +14,7 @@ from backend.app.models.investigation import Investigation as InvestigationModel
 from backend.app.models.raw_log import RawLog as RawLogModel
 from backend.app.models.host import Host as HostModel
 from backend.app.models.agent import Agent as AgentModel
+from backend.app.models.mitre import MitreMapping as MitreMappingModel, MitreTechnique as MitreTechniqueModel
 from backend.app.schemas.timeline import TimelineItem, TimelineResponse, InvestigationTimelineMeta, TimelineSummaryMetrics
 
 router = APIRouter()
@@ -30,7 +31,8 @@ def _extract_timeline_item(
     investigation_title: Optional[str] = None,
     investigation_status: Optional[str] = None,
     related_event_count: Optional[int] = None,
-    related_event_ids: Optional[List[int]] = None
+    related_event_ids: Optional[List[int]] = None,
+    mitre_techniques: Optional[List[Dict[str, Any]]] = None
 ) -> TimelineItem:
     meta = ev.metadata_ if isinstance(ev.metadata_, dict) else {}
     proc_name = (
@@ -82,6 +84,7 @@ def _extract_timeline_item(
         investigation_status=investigation_status,
         related_event_count=related_event_count,
         related_event_ids=related_event_ids,
+        mitre_techniques=mitre_techniques,
         metadata_=ev.metadata_
     )
 
@@ -535,6 +538,59 @@ async def get_attack_timeline(
                             "investigation_status": i_status
                         }
 
+    # Batch-resolve MITRE ATT&CK technique mappings for events, associated alerts, or rules on this page
+    event_mitre_map: Dict[int, List[Dict[str, Any]]] = {}
+    if events:
+        event_str_ids = [str(ev.id) for ev in events] + [ev.event_id for ev in events if ev.event_id]
+        mitre_ev_stmt = (
+            select(MitreMappingModel, MitreTechniqueModel)
+            .join(MitreTechniqueModel, MitreMappingModel.technique_id == MitreTechniqueModel.technique_id)
+            .where(
+                MitreMappingModel.target_type == "EVENT",
+                MitreMappingModel.target_id.in_(event_str_ids)
+            )
+        )
+        mitre_ev_res = await db.execute(mitre_ev_stmt)
+        for m_obj, t_obj in mitre_ev_res.all():
+            for ev in events:
+                if str(ev.id) == m_obj.target_id or ev.event_id == m_obj.target_id:
+                    if ev.id not in event_mitre_map:
+                        event_mitre_map[ev.id] = []
+                    event_mitre_map[ev.id].append({
+                        "technique_id": t_obj.technique_id,
+                        "name": t_obj.name,
+                        "source": m_obj.mapping_source,
+                        "confidence": m_obj.confidence,
+                        "evidence_reference": m_obj.evidence_reference
+                    })
+
+        # Also check if any associated alert has an explicit MITRE mapping
+        alert_str_ids = [info["alert_id"] for info in event_alerts_map.values() if info.get("alert_id")]
+        if alert_str_ids:
+            mitre_al_stmt = (
+                select(MitreMappingModel, MitreTechniqueModel)
+                .join(MitreTechniqueModel, MitreMappingModel.technique_id == MitreTechniqueModel.technique_id)
+                .where(
+                    MitreMappingModel.target_type == "ALERT",
+                    MitreMappingModel.target_id.in_(alert_str_ids)
+                )
+            )
+            mitre_al_res = await db.execute(mitre_al_stmt)
+            for m_obj, t_obj in mitre_al_res.all():
+                for ev_id, a_info in event_alerts_map.items():
+                    if a_info.get("alert_id") == m_obj.target_id:
+                        if ev_id not in event_mitre_map:
+                            event_mitre_map[ev_id] = []
+                        # Avoid duplicates
+                        if not any(x["technique_id"] == t_obj.technique_id for x in event_mitre_map[ev_id]):
+                            event_mitre_map[ev_id].append({
+                                "technique_id": t_obj.technique_id,
+                                "name": t_obj.name,
+                                "source": m_obj.mapping_source,
+                                "confidence": m_obj.confidence,
+                                "evidence_reference": m_obj.evidence_reference or f"Alert #{m_obj.target_id}"
+                            })
+
     items: List[TimelineItem] = []
     for ev in events:
         c_provenance: Optional[str] = None
@@ -624,7 +680,8 @@ async def get_attack_timeline(
                 investigation_id=item_inv_id,
                 investigation_title=item_inv_title,
                 investigation_status=item_inv_status,
-                related_event_count=item_related_count
+                related_event_count=item_related_count,
+                mitre_techniques=event_mitre_map.get(ev.id)
             )
         )
 

@@ -9,7 +9,8 @@ from backend.app.api.v1.endpoints import (
     hosts,
     detections,
     ws,
-    timeline
+    timeline,
+    mitre
 )
 
 api_router = APIRouter()
@@ -23,3 +24,4 @@ api_router.include_router(detections.router, prefix="/detections", tags=["detect
 api_router.include_router(ws.router, prefix="/ws", tags=["websocket"])
 api_router.include_router(investigations.router, prefix="/investigations", tags=["investigations"])
 api_router.include_router(timeline.router, prefix="/attack-timeline", tags=["attack-timeline"])
+api_router.include_router(mitre.router, prefix="/mitre", tags=["mitre"])

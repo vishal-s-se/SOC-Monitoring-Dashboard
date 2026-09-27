@@ -21,6 +21,7 @@ from backend.app.models.event import Event as EventModel
 from backend.app.models.raw_log import RawLog as RawLogModel
 from backend.app.models.host import Host as HostModel
 from backend.app.models.agent import Agent as AgentModel
+from backend.app.models.mitre import MitreMapping as MitreMappingModel, MitreTechnique as MitreTechniqueModel, MitreTechniqueTactic as MitreTechniqueTacticModel
 # Assuming a real-time event publisher exists, we'll try to use it if available
 try:
     from backend.app.api.v1.endpoints.websockets import manager
@@ -428,6 +429,72 @@ async def get_investigation_context(id: int, db: AsyncSession = Depends(get_db))
                     "host_id": a.host_id
                 }
             })
+
+    # Fetch explicitly mapped MITRE ATT&CK techniques (investigation itself + attached evidence)
+    context["mitre"] = []
+    # 1. Directly mapped to this investigation
+    inv_mitre_stmt = (
+        select(MitreMappingModel, MitreTechniqueModel)
+        .join(MitreTechniqueModel, MitreMappingModel.technique_id == MitreTechniqueModel.technique_id)
+        .options(
+            selectinload(MitreTechniqueModel.tactics).selectinload(MitreTechniqueTacticModel.tactic)
+        )
+        .where(
+            MitreMappingModel.target_type == "INVESTIGATION",
+            MitreMappingModel.target_id == str(id)
+        )
+    )
+    inv_mitre_res = await db.execute(inv_mitre_stmt)
+    seen_techs = set()
+    for m, t in inv_mitre_res.all():
+        tactics = [
+            {"tactic_id": tt.tactic.tactic_id, "name": tt.tactic.name}
+            for tt in t.tactics if tt.tactic
+        ]
+        context["mitre"].append({
+            "mapping_id": m.id,
+            "technique_id": t.technique_id,
+            "technique_name": t.name,
+            "tactics": tactics,
+            "source": m.mapping_source,
+            "confidence": m.confidence,
+            "evidence_reference": m.evidence_reference or f"Investigation #{id}",
+            "is_direct": True
+        })
+        seen_techs.add(t.technique_id)
+
+    # 2. Inherited from attached alerts
+    if alert_ids:
+        alert_str_ids = [str(aid) for aid in alert_ids]
+        al_mitre_stmt = (
+            select(MitreMappingModel, MitreTechniqueModel)
+            .join(MitreTechniqueModel, MitreMappingModel.technique_id == MitreTechniqueModel.technique_id)
+            .options(
+                selectinload(MitreTechniqueModel.tactics).selectinload(MitreTechniqueTacticModel.tactic)
+            )
+            .where(
+                MitreMappingModel.target_type == "ALERT",
+                MitreMappingModel.target_id.in_(alert_str_ids)
+            )
+        )
+        al_mitre_res = await db.execute(al_mitre_stmt)
+        for m, t in al_mitre_res.all():
+            if t.technique_id not in seen_techs:
+                tactics = [
+                    {"tactic_id": tt.tactic.tactic_id, "name": tt.tactic.name}
+                    for tt in t.tactics if tt.tactic
+                ]
+                context["mitre"].append({
+                    "mapping_id": m.id,
+                    "technique_id": t.technique_id,
+                    "technique_name": t.name,
+                    "tactics": tactics,
+                    "source": m.mapping_source,
+                    "confidence": m.confidence,
+                    "evidence_reference": m.evidence_reference or f"Alert #{m.target_id}",
+                    "is_direct": False
+                })
+                seen_techs.add(t.technique_id)
 
     return context
 

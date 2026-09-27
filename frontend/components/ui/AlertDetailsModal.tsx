@@ -1,8 +1,9 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
 import { SeverityBadge } from "./SeverityBadge"
 import { StatusBadge } from "./StatusBadge"
 import { AddToInvestigationModal } from "./AddToInvestigationModal"
+import { api } from "@/lib/api"
 
 interface Props {
   alert: any
@@ -11,6 +12,24 @@ interface Props {
 
 export function AlertDetailsModal({ alert, onClose }: Props) {
   const [showInvestigateModal, setShowInvestigateModal] = useState(false)
+  const [mitreMappings, setMitreMappings] = useState<any[]>([])
+
+  useEffect(() => {
+    if (!alert) return
+    async function loadMitre() {
+      try {
+        const idToSearch = alert.alert_id || String(alert.id)
+        const mappings = await api.get<any[]>('/mitre/mappings', {
+          target_type: 'ALERT',
+          target_id: idToSearch
+        })
+        setMitreMappings(mappings || [])
+      } catch {
+        setMitreMappings([])
+      }
+    }
+    loadMitre()
+  }, [alert])
 
   if (!alert) return null
 
@@ -93,6 +112,43 @@ export function AlertDetailsModal({ alert, onClose }: Props) {
             <div className="border-t border-gray-800 pt-4">
               <h4 className="text-sm font-semibold text-gray-300 mb-2">Description</h4>
               <p className="text-sm text-gray-300">{alert.description}</p>
+            </div>
+          )}
+
+          {/* MITRE ATT&CK Section (Phase 7E-1) */}
+          {mitreMappings && mitreMappings.length > 0 && (
+            <div className="border-t border-gray-800 pt-4">
+              <h4 className="text-sm font-semibold text-gray-300 mb-3 flex items-center space-x-2">
+                <span>MITRE ATT&CK Techniques</span>
+                <span className="text-xs bg-red-950 text-red-300 border border-red-800 px-2 py-0.5 rounded font-mono">
+                  {mitreMappings.length}
+                </span>
+              </h4>
+              <div className="space-y-2">
+                {mitreMappings.map(m => (
+                  <div key={m.id} className="p-3 bg-[#151922] border border-gray-800 rounded-lg flex items-center justify-between">
+                    <div>
+                      <span className="font-mono text-xs font-bold text-red-300 bg-red-950/80 border border-red-800/60 px-2 py-0.5 rounded mr-2">
+                        {m.technique_id}
+                      </span>
+                      <span className="text-sm font-semibold text-white">{m.technique_name || m.technique_id}</span>
+                      {m.tactics && m.tactics.length > 0 && (
+                        <span className="text-xs text-blue-300 ml-2">
+                          ({m.tactics.map((t: any) => t.name).join(', ')})
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center space-x-3 text-xs">
+                      <span className="text-gray-400">
+                        Source: <span className="text-gray-200">{m.mapping_source}</span>
+                      </span>
+                      <span className="text-gray-500">
+                        Confidence: <span className="text-gray-300">{m.confidence}</span>
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 

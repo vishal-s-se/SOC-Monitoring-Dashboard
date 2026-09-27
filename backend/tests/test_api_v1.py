@@ -908,3 +908,244 @@ async def test_attack_timeline_filtering_controls_phase_7d5(client: AsyncClient,
     assert "summary" in data_page and data_page["summary"] is not None
     assert len(data_page["summary"]["unique_event_categories"]) >= 1
     assert len(data_page["summary"]["unique_event_types"]) >= 1
+
+
+@pytest.mark.asyncio
+async def test_mitre_attack_foundation_phase_7e1(client: AsyncClient, db: AsyncSession):
+    from backend.app.models.mitre import MitreTactic, MitreTechnique, MitreTechniqueTactic, MitreMapping
+    from backend.app.services.mitre_seeder import seed_mitre_catalog
+
+    # 1. Seed MITRE Catalog
+    seed_res = await seed_mitre_catalog(db)
+    assert seed_res["tactics_seeded"] >= 14
+    assert seed_res["techniques_seeded"] >= 30
+    assert seed_res["relationships_seeded"] >= 40
+
+    # Test idempotency (repeated seeding should not fail or duplicate)
+    seed_res_2 = await seed_mitre_catalog(db)
+    assert seed_res_2["tactics_seeded"] == 0
+    assert seed_res_2["techniques_seeded"] == 0
+
+    # 2. Test GET /api/v1/mitre/tactics
+    res_tactics = await client.get("/api/v1/mitre/tactics")
+    assert res_tactics.status_code == 200
+    tactics = res_tactics.json()
+    assert len(tactics) >= 14
+    tactic_ids = [t["tactic_id"] for t in tactics]
+    assert "TA0001" in tactic_ids # Initial Access
+    assert "TA0002" in tactic_ids # Execution
+    assert "TA0040" in tactic_ids # Impact
+    # Check ordering
+    assert tactics[0]["order_index"] <= tactics[-1]["order_index"]
+
+    # 3. Test GET /api/v1/mitre/techniques (Pagination and List)
+    res_techs = await client.get("/api/v1/mitre/techniques?page=1&page_size=10")
+    assert res_techs.status_code == 200
+    tech_data = res_techs.json()
+    assert tech_data["page"] == 1
+    assert tech_data["page_size"] == 10
+    assert tech_data["total"] >= 30
+    assert len(tech_data["items"]) == 10
+
+    # 4. Test Filtering by Tactic
+    res_exec = await client.get("/api/v1/mitre/techniques?tactic=TA0002")
+    assert res_exec.status_code == 200
+    exec_techs = res_exec.json()["items"]
+    assert len(exec_techs) > 0
+    for t in exec_techs:
+        assert any(tac["tactic_id"] == "TA0002" for tac in t["tactics"])
+
+    # 5. Test Filtering by Hierarchy (Technique vs Subtechnique)
+    res_sub = await client.get("/api/v1/mitre/techniques?is_subtechnique=true")
+    assert res_sub.status_code == 200
+    sub_techs = res_sub.json()["items"]
+    assert len(sub_techs) > 0
+    assert all(st["is_subtechnique"] is True for st in sub_techs)
+
+    # 6. Test Search (Server-side)
+    res_search = await client.get("/api/v1/mitre/techniques?search=PowerShell")
+    assert res_search.status_code == 200
+    search_items = res_search.json()["items"]
+    assert len(search_items) >= 1
+    assert any(si["technique_id"] == "T1059.001" for si in search_items)
+
+    # 7. Test Technique Detail: GET /api/v1/mitre/techniques/{technique_id}
+    res_detail = await client.get("/api/v1/mitre/techniques/T1059")
+    assert res_detail.status_code == 200
+    detail = res_detail.json()
+    assert detail["technique_id"] == "T1059"
+    assert detail["name"] == "Command and Scripting Interpreter"
+    assert len(detail["subtechniques"]) >= 3 # T1059.001, T1059.003, T1059.004
+    sub_ids = [s["technique_id"] for s in detail["subtechniques"]]
+    assert "T1059.001" in sub_ids
+
+    # Sub-technique detail with parent
+    res_sub_detail = await client.get("/api/v1/mitre/techniques/T1059.001")
+    assert res_sub_detail.status_code == 200
+    sub_detail = res_sub_detail.json()
+    assert sub_detail["technique_id"] == "T1059.001"
+    assert sub_detail["is_subtechnique"] is True
+    assert sub_detail["parent_technique"] is not None
+    assert sub_detail["parent_technique"]["technique_id"] == "T1059"
+
+    # Invalid technique format test (400 Bad Request)
+    res_bad_id = await client.get("/api/v1/mitre/techniques/INVALID_TECHNIQUE")
+    assert res_bad_id.status_code == 400
+
+    # Non-existent technique (404 Not Found)
+    res_not_found = await client.get("/api/v1/mitre/techniques/T9999")
+    assert res_not_found.status_code == 404
+
+    # 8. Test Mapping Entities
+    # Create target entities: DetectionRule, Alert, Investigation, Event
+    rule = DetectionRule(
+        rule_id="RUL-MITRE-01",
+        name="PowerShell Execution",
+        severity="HIGH",
+        conditions=[{"field": "process_name", "operator": "equals", "value": "powershell.exe"}]
+    )
+    db.add(rule)
+    await db.flush()
+
+    alert = Alert(
+        alert_id=str(uuid.uuid4()),
+        title="Alert: PowerShell Execution",
+        severity="HIGH",
+        status="OPEN",
+        fingerprint=f"RUL-MITRE-01:host1",
+        rule_id=rule.id,
+        first_seen=datetime.now(timezone.utc),
+        last_seen=datetime.now(timezone.utc)
+    )
+    db.add(alert)
+    await db.flush()
+
+    from backend.app.models.investigation import Investigation
+    inv = Investigation(
+        title="Investigation: PowerShell Threat",
+        status="OPEN",
+        severity="HIGH"
+    )
+    db.add(inv)
+    await db.flush()
+
+    event = Event(
+        event_id=str(uuid.uuid4()),
+        timestamp=datetime.now(timezone.utc),
+        event_type="process_creation",
+        event_category="process",
+        severity="HIGH",
+        hostname="sec-workstation"
+    )
+    db.add(event)
+    await db.commit()
+
+    # 8a. Map Detection Rule -> T1059.001 (DOCUMENTED_RULE)
+    map_rule_payload = {
+        "technique_id": "T1059.001",
+        "target_type": "DETECTION_RULE",
+        "target_id": str(rule.id),
+        "mapping_source": "DOCUMENTED_RULE",
+        "confidence": "HIGH",
+        "notes": "Rule explicitly monitors PowerShell script invocation"
+    }
+    res_map_rule = await client.post("/api/v1/mitre/mappings", json=map_rule_payload)
+    assert res_map_rule.status_code == 201
+    map_rule_data = res_map_rule.json()
+    assert map_rule_data["technique_id"] == "T1059.001"
+    assert map_rule_data["target_type"] == "DETECTION_RULE"
+    assert map_rule_data["confidence"] == "HIGH"
+
+    # 8b. Map Alert -> T1059.001 (SYSTEM_DEFINED)
+    map_alert_payload = {
+        "technique_id": "T1059.001",
+        "target_type": "ALERT",
+        "target_id": str(alert.id),
+        "mapping_source": "SYSTEM_DEFINED",
+        "confidence": "HIGH",
+        "evidence_reference": f"Alert #{alert.id}"
+    }
+    res_map_alert = await client.post("/api/v1/mitre/mappings", json=map_alert_payload)
+    assert res_map_alert.status_code == 201
+
+    # 8c. Map Investigation -> T1059.001 (ANALYST_CONFIRMED)
+    map_inv_payload = {
+        "technique_id": "T1059.001",
+        "target_type": "INVESTIGATION",
+        "target_id": str(inv.id),
+        "mapping_source": "ANALYST_CONFIRMED",
+        "confidence": "HIGH",
+        "evidence_reference": f"Investigation #{inv.id}"
+    }
+    res_map_inv = await client.post("/api/v1/mitre/mappings", json=map_inv_payload)
+    assert res_map_inv.status_code == 201
+
+    # 8d. Map Event -> T1059.001 (ANALYST_CONFIRMED)
+    map_ev_payload = {
+        "technique_id": "T1059.001",
+        "target_type": "EVENT",
+        "target_id": str(event.id),
+        "mapping_source": "ANALYST_CONFIRMED",
+        "confidence": "MEDIUM"
+    }
+    res_map_ev = await client.post("/api/v1/mitre/mappings", json=map_ev_payload)
+    assert res_map_ev.status_code == 201
+
+    # 9. Duplicate Mapping Prevention (409 Conflict)
+    res_dup = await client.post("/api/v1/mitre/mappings", json=map_inv_payload)
+    assert res_dup.status_code == 409
+
+    # 10. Invalid Target Entity (404 Not Found)
+    bad_target_payload = {
+        "technique_id": "T1059.001",
+        "target_type": "INVESTIGATION",
+        "target_id": "99999",
+        "mapping_source": "ANALYST_CONFIRMED"
+    }
+    res_bad_target = await client.post("/api/v1/mitre/mappings", json=bad_target_payload)
+    assert res_bad_target.status_code == 404
+
+    # 11. Retrieve Mappings: GET /api/v1/mitre/mappings
+    res_mappings = await client.get(f"/api/v1/mitre/mappings?target_type=INVESTIGATION&target_id={inv.id}")
+    assert res_mappings.status_code == 200
+    inv_mappings = res_mappings.json()
+    assert len(inv_mappings) == 1
+    assert inv_mappings[0]["technique_id"] == "T1059.001"
+    assert inv_mappings[0]["mapping_source"] == "ANALYST_CONFIRMED"
+
+    # 12. Traceability in Technique Detail View
+    res_detail_updated = await client.get("/api/v1/mitre/techniques/T1059.001")
+    assert res_detail_updated.status_code == 200
+    detail_data = res_detail_updated.json()
+    assert len(detail_data["detection_rules"]) >= 1
+    assert len(detail_data["alerts"]) >= 1
+    assert len(detail_data["investigations"]) >= 1
+    assert len(detail_data["events"]) >= 1
+
+    # 13. Traceability in Investigation Context API
+    res_inv_ctx = await client.get(f"/api/v1/investigations/{inv.id}/context")
+    assert res_inv_ctx.status_code == 200
+    ctx_data = res_inv_ctx.json()
+    assert "mitre" in ctx_data
+    assert len(ctx_data["mitre"]) >= 1
+    assert ctx_data["mitre"][0]["technique_id"] == "T1059.001"
+    assert ctx_data["mitre"][0]["source"] == "ANALYST_CONFIRMED"
+
+    # 14. Traceability in Timeline API
+    res_tl = await client.get(f"/api/v1/attack-timeline/?search=sec-workstation")
+    assert res_tl.status_code == 200
+    tl_items = res_tl.json()["items"]
+    assert len(tl_items) >= 1
+    matched_ev = next((item for item in tl_items if item["id"] == event.id), None)
+    assert matched_ev is not None
+    assert matched_ev["mitre_techniques"] is not None
+    assert any(mt["technique_id"] == "T1059.001" for mt in matched_ev["mitre_techniques"])
+
+    # 15. Delete Mapping
+    mapping_to_delete = inv_mappings[0]["id"]
+    res_del = await client.delete(f"/api/v1/mitre/mappings/{mapping_to_delete}")
+    assert res_del.status_code == 204
+
+    # Verify deleted
+    res_check = await client.get(f"/api/v1/mitre/mappings?target_type=INVESTIGATION&target_id={inv.id}")
+    assert len(res_check.json()) == 0

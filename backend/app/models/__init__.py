@@ -9,6 +9,5 @@ from .detection import DetectionRule, DetectionResult
 
 from .alert import Alert
 
-from .alert import Alert
-
 from backend.app.models.investigation import Investigation, InvestigationEvidence, InvestigationNote
+from backend.app.models.mitre import MitreTactic, MitreTechnique, MitreTechniqueTactic, MitreMapping, MitreTargetType, MitreMappingSource, MitreConfidence

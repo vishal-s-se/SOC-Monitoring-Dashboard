@@ -51,6 +51,7 @@ interface TimelineItem {
   investigation_status?: string
   related_event_count?: number
   related_event_ids?: number[]
+  mitre_techniques?: any[]
   metadata_?: any
 }
 
@@ -1305,6 +1306,17 @@ function AttackTimelineContent() {
                             )}
 
                             <SeverityBadge severity={item.severity || 'INFO'} />
+
+                            {item.mitre_techniques && item.mitre_techniques.map((mt: any) => (
+                              <span
+                                key={mt.technique_id}
+                                title={`${mt.name} (Source: ${mt.source}, Conf: ${mt.confidence})`}
+                                className="text-xs bg-red-950/80 border border-red-700/60 text-red-300 px-2 py-0.5 rounded font-mono font-bold flex items-center space-x-1"
+                              >
+                                <span className="text-[10px] text-red-400">ATT&CK</span>
+                                <span>{mt.technique_id}</span>
+                              </span>
+                            ))}
                           </div>
 
                           {/* Provenance Badge */}
@@ -1614,6 +1626,37 @@ function AttackTimelineContent() {
                                     <span className="text-gray-500 italic block mt-0.5">No correlated events</span>
                                   )}
                                 </div>
+
+                                {/* MITRE ATT&CK Mappings (Phase 7E-1) */}
+                                {item.mitre_techniques && item.mitre_techniques.length > 0 && (
+                                  <div className="bg-red-950/20 p-2.5 rounded border border-red-900/40 sm:col-span-2 md:col-span-3">
+                                    <span className="text-red-400 block text-[10px] uppercase font-bold tracking-wider mb-1.5">
+                                      MITRE ATT&CK MAPPINGS (EXPLICIT EVIDENCE)
+                                    </span>
+                                    <div className="flex flex-wrap gap-2">
+                                      {item.mitre_techniques.map((mt: any) => (
+                                        <div key={mt.technique_id} className="bg-black/60 p-2 rounded border border-gray-800 flex items-center space-x-3 text-xs">
+                                          <span className="font-mono text-xs font-bold text-red-300 bg-red-950 px-2 py-0.5 rounded border border-red-800/80">
+                                            {mt.technique_id}
+                                          </span>
+                                          <span className="text-gray-200 font-medium">{mt.name}</span>
+                                          <span className="text-gray-500 text-[11px]">
+                                            Source: <span className="text-gray-300">{mt.source}</span>
+                                          </span>
+                                          <span className="text-gray-500 text-[11px]">
+                                            Conf: <span className="text-gray-300">{mt.confidence}</span>
+                                          </span>
+                                          <Link
+                                            href={`/mitre`}
+                                            className="text-blue-400 hover:underline text-[11px]"
+                                          >
+                                            Catalog →
+                                          </Link>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
                               </div>
                             </div>
 

@@ -1,5 +1,5 @@
 from pydantic import BaseModel, ConfigDict
-from typing import Optional, Any, List
+from typing import Optional, Any, List, Dict
 from datetime import datetime
 from backend.app.schemas.pagination import PaginatedResponse
 
@@ -37,6 +37,7 @@ class TimelineItem(BaseModel):
     investigation_status: Optional[str] = None
     related_event_count: Optional[int] = None
     related_event_ids: Optional[List[int]] = None
+    mitre_techniques: Optional[List[Dict[str, Any]]] = None
     metadata_: Optional[Any] = None
 
     model_config = ConfigDict(from_attributes=True)
