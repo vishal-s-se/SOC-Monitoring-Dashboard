@@ -8,27 +8,20 @@ from sqlalchemy.future import select
 from backend.app.models.detection import DetectionRule, DetectionResult
 from backend.app.models.alert import Alert
 from backend.app.models.event import Event
+from backend.app.engine.event_bus import event_bus
 
 logger = logging.getLogger(__name__)
 
 class AlertService:
     @staticmethod
     def generate_fingerprint(rule: DetectionRule, event: Event) -> str:
-        """
-        Generate a deterministic deduplication key for an alert.
-        We group alerts by Rule ID and Agent ID (or hostname if agent is missing).
-        """
         target = str(event.agent_id) if event.agent_id else event.hostname or "unknown"
         return f"{rule.rule_id}:{target}"
 
     @staticmethod
     async def process_detection(db: AsyncSession, detection: DetectionResult, rule: DetectionRule, event: Event) -> Alert:
-        """
-        Process a detection result and either create a new Alert or update an existing one.
-        """
         fingerprint = AlertService.generate_fingerprint(rule, event)
         
-        # Check for an active (OPEN or ACKNOWLEDGED) alert with this fingerprint
         stmt = select(Alert).where(
             Alert.fingerprint == fingerprint,
             Alert.status.in_(["OPEN", "ACKNOWLEDGED"])
@@ -37,16 +30,20 @@ class AlertService:
         existing_alert = result.scalars().first()
         
         if existing_alert:
-            # Duplicate detection -> update occurrence
             existing_alert.occurrence_count += 1
             existing_alert.last_seen = datetime.now(timezone.utc)
             detection.alert_id = existing_alert.id
             detection.status = "PROCESSED"
             db.add(existing_alert)
             db.add(detection)
+            
+            await event_bus.publish("alert_updated", {
+                "alert_id": existing_alert.alert_id,
+                "status": existing_alert.status,
+                "occurrence_count": existing_alert.occurrence_count
+            })
             return existing_alert
             
-        # No active alert, create a new one
         new_alert = Alert(
             alert_id=str(uuid.uuid4()),
             title=f"Alert: {rule.name}",
@@ -63,11 +60,20 @@ class AlertService:
             }
         )
         db.add(new_alert)
-        await db.flush() # flush to get new_alert.id
+        await db.flush() 
         
         detection.alert_id = new_alert.id
         detection.status = "PROCESSED"
         db.add(detection)
+        
+        await event_bus.publish("new_alert", {
+            "alert_id": new_alert.alert_id,
+            "title": new_alert.title,
+            "severity": new_alert.severity,
+            "status": new_alert.status,
+            "rule_id": rule.rule_id,
+            "agent_id": event.agent_id
+        })
         
         return new_alert
 
@@ -80,6 +86,10 @@ class AlertService:
         if alert and alert.status == "OPEN":
             alert.status = "ACKNOWLEDGED"
             db.add(alert)
+            await event_bus.publish("alert_updated", {
+                "alert_id": alert.alert_id,
+                "status": alert.status
+            })
         return alert
 
     @staticmethod
@@ -91,4 +101,8 @@ class AlertService:
         if alert and alert.status in ["OPEN", "ACKNOWLEDGED"]:
             alert.status = "RESOLVED"
             db.add(alert)
+            await event_bus.publish("alert_updated", {
+                "alert_id": alert.alert_id,
+                "status": alert.status
+            })
         return alert

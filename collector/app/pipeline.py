@@ -83,9 +83,18 @@ async def process_event(event_req: EventRequest, agent: Agent, db: AsyncSession)
     except Exception as e:
         await db.rollback()
         logger.error(f"Failed to commit normalized event: {e}")
-        # Even if normalization persistence fails, we don't want to crash. 
-        # But we should raise 500 so the agent might retry? Or just log it.
-        # It's better to raise HTTPException so it's not silently dropped if DB is down.
         raise HTTPException(status_code=500, detail="Database error during event normalization")
+        
+    from backend.app.engine.event_bus import event_bus
+    await event_bus.publish("new_event", {
+        "event_id": event.event_id,
+        "agent_id": event.agent_id,
+        "hostname": event.hostname,
+        "operating_system": event.operating_system,
+        "event_type": event.event_type,
+        "source": event.source_type,
+        "timestamp": event.timestamp.isoformat(),
+        "severity": event.severity
+    })
         
     return {"status": "ok", "message": "Event processed successfully"}

@@ -12,6 +12,7 @@ from backend.app.models.agent import Agent
 from backend.app.models.host import Host
 from backend.app.models.heartbeat import Heartbeat
 from backend.app.models.raw_log import RawLog
+from backend.app.engine.event_bus import event_bus
 
 router = APIRouter()
 
@@ -21,22 +22,30 @@ async def register_agent(
     db: AsyncSession = Depends(get_db),
     auth: str = Depends(verify_agent_auth)
 ):
-    # Check if agent already exists
     stmt = select(Agent).where(Agent.agent_id == registration.agent_id)
     result = await db.execute(stmt)
     agent = result.scalar_one_or_none()
     
     if agent:
-        # Update existing agent metadata (idempotent registration)
+        old_status = agent.status
         agent.hostname = registration.hostname
         agent.operating_system = registration.operating_system
         agent.agent_version = registration.agent_version
         agent.ip_address = registration.ip_address
         agent.metadata_ = registration.metadata_
+        agent.status = "ONLINE"
         await db.commit()
+        
+        if old_status != "ONLINE":
+            await event_bus.publish("agent_status_changed", {
+                "agent_id": agent.agent_id,
+                "hostname": agent.hostname,
+                "status": "ONLINE",
+                "previous_status": old_status
+            })
+            
         return {"status": "ok", "message": "Agent updated", "agent_id": agent.agent_id}
     
-    # Check if host exists by hostname
     stmt = select(Host).where(Host.hostname == registration.hostname)
     result = await db.execute(stmt)
     host = result.scalar_one_or_none()
@@ -52,7 +61,12 @@ async def register_agent(
         await db.commit()
         await db.refresh(host)
         
-    # Create new agent
+        await event_bus.publish("host_status_changed", {
+            "host_id": host.id,
+            "hostname": host.hostname,
+            "status": host.status
+        })
+        
     new_agent = Agent(
         agent_id=registration.agent_id,
         host_id=host.id,
@@ -65,6 +79,13 @@ async def register_agent(
     )
     db.add(new_agent)
     await db.commit()
+    
+    await event_bus.publish("agent_status_changed", {
+        "agent_id": new_agent.agent_id,
+        "hostname": new_agent.hostname,
+        "status": new_agent.status,
+        "previous_status": "UNREGISTERED"
+    })
     
     return {"status": "ok", "message": "Agent registered successfully", "agent_id": new_agent.agent_id}
 
@@ -84,13 +105,12 @@ async def receive_heartbeat(
             detail="Agent not found. Please register first."
         )
         
-    # Update agent status
+    old_status = agent.status
     agent.last_heartbeat = heartbeat_req.timestamp
     agent.status = heartbeat_req.connection_status
     if heartbeat_req.ip_address:
         agent.ip_address = heartbeat_req.ip_address
     
-    # Store heartbeat
     hb = Heartbeat(
         agent_id=agent.id,
         host_id=agent.host_id,
@@ -102,6 +122,14 @@ async def receive_heartbeat(
     )
     db.add(hb)
     await db.commit()
+    
+    if old_status != heartbeat_req.connection_status:
+        await event_bus.publish("agent_status_changed", {
+            "agent_id": agent.agent_id,
+            "hostname": agent.hostname,
+            "status": agent.status,
+            "previous_status": old_status
+        })
     
     return {"status": "ok"}
 
