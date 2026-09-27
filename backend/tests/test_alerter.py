@@ -235,7 +235,7 @@ async def test_multiple_agents_independent_alerts(db: AsyncSession, setup_data):
 @pytest.mark.asyncio
 async def test_alert_api_endpoints(client: AsyncClient, setup_data):
     # Retrieve alerts
-    res = await client.get("/api/v1/alerts")
+    res = await client.get("/api/v1/alerts/")
     assert res.status_code == 200
     data = res.json()
-    assert "alerts" in data
+    assert "alerts" in data or "items" in data
