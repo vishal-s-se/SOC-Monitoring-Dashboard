@@ -34,3 +34,6 @@ class EventInDBBase(EventBase):
 
 class Event(EventInDBBase):
     pass
+
+class CorrelatedEvent(Event):
+    correlation_reason: str

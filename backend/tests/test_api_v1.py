@@ -293,3 +293,41 @@ async def test_investigation_lifecycle(client: AsyncClient):
     # 8. Check Not Found
     nf_resp = await client.get("/api/v1/investigations/999999")
     assert nf_resp.status_code == 404
+
+@pytest.mark.asyncio
+async def test_investigation_correlated_events(client: AsyncClient, sample_data):
+    # Create investigation
+    create_resp = await client.post("/api/v1/investigations/", json={
+        "title": "Correlation Test",
+        "severity": "HIGH",
+    })
+    inv_id = create_resp.json()["id"]
+
+    # Fetch an event
+    ev_list = await client.get("/api/v1/events/?page_size=10")
+    events = ev_list.json()["items"]
+    assert len(events) > 0
+    first_ev = events[0]
+
+    # Add as evidence
+    ev_resp = await client.post(f"/api/v1/investigations/{inv_id}/evidence", json={
+        "evidence_type": "EVENT",
+        "reference_id": str(first_ev["id"])
+    })
+    evidence_id = ev_resp.json()["id"]
+
+    # Correlate
+    corr_resp = await client.get(f"/api/v1/investigations/{inv_id}/correlated-events?evidence_id={evidence_id}&correlation_keys=host,source_ip,destination_ip,username")
+    assert corr_resp.status_code == 200
+    corr_data = corr_resp.json()
+    assert "items" in corr_data
+
+    # Verify exclusions and reasons
+    for ev in corr_data["items"]:
+        assert ev["id"] != first_ev["id"]
+        assert "correlation_reason" in ev
+        assert len(ev["correlation_reason"]) > 0
+
+    # Nonexistent evidence
+    nf_resp = await client.get(f"/api/v1/investigations/{inv_id}/correlated-events?evidence_id=999999")
+    assert nf_resp.status_code == 404

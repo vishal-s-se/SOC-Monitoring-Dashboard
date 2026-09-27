@@ -404,6 +404,185 @@ async def get_investigation_context(id: int, db: AsyncSession = Depends(get_db))
     return context
 
 
+from datetime import timedelta
+from backend.app.schemas.event import CorrelatedEvent
+
+@router.get("/{id}/correlated-events", response_model=PaginatedResponse[CorrelatedEvent])
+async def get_correlated_events(
+    id: int,
+    evidence_id: int,
+    time_window_minutes: int = Query(15, ge=1, le=1440),
+    correlation_keys: Optional[str] = Query(None, description="Comma-separated keys: host,agent,source_ip,destination_ip,username"),
+    event_type: Optional[str] = None,
+    severity: Optional[str] = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=100),
+    db: AsyncSession = Depends(get_db)
+):
+    ev_stmt = select(InvestigationEvidence).where(InvestigationEvidence.id == evidence_id, InvestigationEvidence.investigation_id == id)
+    ev_res = await db.execute(ev_stmt)
+    evidence = ev_res.scalars().first()
+    if not evidence:
+        raise HTTPException(status_code=404, detail="Evidence not found")
+
+    ref_id_str = evidence.reference_id
+    if not ref_id_str.isdigit():
+        return PaginatedResponse(items=[], page=page, page_size=page_size, total=0)
+    ref_id = int(ref_id_str)
+
+    context_data = {
+        "hostname": None,
+        "agent_id": None,
+        "source_ip": None,
+        "destination_ip": None,
+        "username": None,
+        "timestamp": None,
+        "source_event_id": None
+    }
+
+    if evidence.evidence_type == "EVENT":
+        res = await db.execute(select(EventModel).where(EventModel.id == ref_id))
+        rec = res.scalars().first()
+        if rec:
+            context_data["hostname"] = rec.hostname
+            context_data["agent_id"] = rec.agent_id
+            context_data["source_ip"] = rec.source_ip
+            context_data["destination_ip"] = rec.destination_ip
+            context_data["username"] = rec.username
+            context_data["timestamp"] = rec.timestamp
+            context_data["source_event_id"] = rec.id
+    elif evidence.evidence_type == "ALERT":
+        res = await db.execute(select(AlertModel).options(selectinload(AlertModel.host), selectinload(AlertModel.agent)).where(AlertModel.id == ref_id))
+        rec = res.scalars().first()
+        if rec:
+            context_data["timestamp"] = rec.last_seen or rec.first_seen
+            if rec.host:
+                context_data["hostname"] = rec.host.hostname
+            if rec.agent:
+                context_data["agent_id"] = rec.agent.id
+    elif evidence.evidence_type == "RAW_LOG":
+        res = await db.execute(select(RawLogModel).options(selectinload(RawLogModel.host), selectinload(RawLogModel.agent)).where(RawLogModel.id == ref_id))
+        rec = res.scalars().first()
+        if rec:
+            context_data["timestamp"] = rec.timestamp
+            if rec.host:
+                context_data["hostname"] = rec.host.hostname
+            if rec.agent:
+                context_data["agent_id"] = rec.agent.id
+    elif evidence.evidence_type == "HOST":
+        res = await db.execute(select(HostModel).where(HostModel.id == ref_id))
+        rec = res.scalars().first()
+        if rec:
+            context_data["hostname"] = rec.hostname
+            context_data["timestamp"] = rec.last_seen or rec.created_at
+            context_data["source_ip"] = rec.ip_address
+    elif evidence.evidence_type == "AGENT":
+        res = await db.execute(select(AgentModel).where(AgentModel.id == ref_id))
+        rec = res.scalars().first()
+        if rec:
+            context_data["agent_id"] = rec.id
+            context_data["hostname"] = rec.hostname
+            context_data["source_ip"] = rec.ip_address
+            context_data["timestamp"] = rec.last_seen or rec.registered_at
+
+    if not context_data["timestamp"]:
+        return PaginatedResponse(items=[], page=page, page_size=page_size, total=0)
+
+    start_time = context_data["timestamp"] - timedelta(minutes=time_window_minutes)
+    end_time = context_data["timestamp"] + timedelta(minutes=time_window_minutes)
+
+    allowed_keys = []
+    if correlation_keys:
+        allowed_keys = [k.strip().lower() for k in correlation_keys.split(",")]
+    else:
+        allowed_keys = ["host", "agent", "source_ip", "destination_ip", "username"]
+
+    stmt = select(EventModel).where(EventModel.timestamp >= start_time, EventModel.timestamp <= end_time)
+    if context_data["source_event_id"]:
+        stmt = stmt.where(EventModel.id != context_data["source_event_id"])
+
+    if event_type:
+        stmt = stmt.where(EventModel.event_type == event_type)
+    if severity:
+        stmt = stmt.where(EventModel.severity == severity)
+
+    conditions = []
+    if "host" in allowed_keys and context_data["hostname"]:
+        conditions.append(EventModel.hostname == context_data["hostname"])
+    if "agent" in allowed_keys and context_data["agent_id"] is not None:
+        conditions.append(EventModel.agent_id == context_data["agent_id"])
+    if "source_ip" in allowed_keys and context_data["source_ip"]:
+        conditions.append(EventModel.source_ip == context_data["source_ip"])
+    if "destination_ip" in allowed_keys and context_data["destination_ip"]:
+        conditions.append(EventModel.destination_ip == context_data["destination_ip"])
+    if "username" in allowed_keys and context_data["username"]:
+        conditions.append(EventModel.username == context_data["username"])
+
+    if not conditions:
+        return PaginatedResponse(items=[], page=page, page_size=page_size, total=0)
+
+    stmt = stmt.where(or_(*conditions))
+
+    count_stmt = select(func.count()).select_from(stmt.subquery())
+    total_result = await db.execute(count_stmt)
+    total = total_result.scalar_one()
+
+    stmt = stmt.order_by(EventModel.timestamp.desc())
+    stmt = stmt.offset((page - 1) * page_size).limit(page_size)
+
+    result = await db.execute(stmt)
+    events = result.scalars().all()
+
+    annotated_events = []
+    for ev in events:
+        reasons = []
+        if "host" in allowed_keys and context_data["hostname"] and ev.hostname == context_data["hostname"]:
+            reasons.append("Same host")
+        if "agent" in allowed_keys and context_data["agent_id"] is not None and ev.agent_id == context_data["agent_id"]:
+            reasons.append("Same agent")
+        if "source_ip" in allowed_keys and context_data["source_ip"] and ev.source_ip == context_data["source_ip"]:
+            reasons.append("Same source IP")
+        if "destination_ip" in allowed_keys and context_data["destination_ip"] and ev.destination_ip == context_data["destination_ip"]:
+            reasons.append("Same destination IP")
+        if "username" in allowed_keys and context_data["username"] and ev.username == context_data["username"]:
+            reasons.append("Same username")
+
+        # Create a dict from the SQLAlchemy model to add the new field
+        # The schema expects id, event_id, timestamp, etc.
+        ev_dict = {
+            "id": ev.id,
+            "event_id": ev.event_id,
+            "timestamp": ev.timestamp,
+            "received_at": ev.received_at,
+            "host_id": ev.host_id,
+            "agent_id": ev.agent_id,
+            "hostname": ev.hostname,
+            "operating_system": ev.operating_system,
+            "source_type": ev.source_type,
+            "event_category": ev.event_category,
+            "event_type": ev.event_type,
+            "username": ev.username,
+            "source_ip": ev.source_ip,
+            "destination_ip": ev.destination_ip,
+            "source_port": ev.source_port,
+            "destination_port": ev.destination_port,
+            "protocol": ev.protocol,
+            "action": ev.action,
+            "severity": ev.severity,
+            "raw_log_id": ev.raw_log_id,
+            "metadata_": ev.metadata_,
+            "correlation_reason": " + ".join(reasons)
+        }
+        annotated_events.append(ev_dict)
+
+    return PaginatedResponse(
+        items=annotated_events,
+        page=page,
+        page_size=page_size,
+        total=total
+    )
+
+
 @router.delete("/{id}/evidence/{evidence_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def remove_evidence(id: int, evidence_id: int, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(InvestigationEvidence).where(

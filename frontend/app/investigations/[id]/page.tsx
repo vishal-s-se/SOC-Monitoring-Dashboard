@@ -7,6 +7,7 @@ import { PageHeader, LoadingState, ErrorState, EmptyState } from '@/components/u
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { SeverityBadge } from '@/components/ui/SeverityBadge'
 import { DataTable } from '@/components/ui/DataTable'
+import { Pagination } from '@/components/ui/Pagination'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 
@@ -39,6 +40,41 @@ export default function InvestigationDetailPage() {
   const [relatedEvents, setRelatedEvents] = useState<any[]>([])
   const [loadingRelated, setLoadingRelated] = useState(false)
   const [relatedContextStr, setRelatedContextStr] = useState("")
+  const [currentEvidenceId, setCurrentEvidenceId] = useState<number | null>(null)
+
+  // Controls for Related Events
+  const [timeWindow, setTimeWindow] = useState<number>(15)
+  const [correlationKeys, setCorrelationKeys] = useState<string>("")
+  const [relatedTypeFilter, setRelatedTypeFilter] = useState("")
+  const [relatedSeverityFilter, setRelatedSeverityFilter] = useState("")
+
+  const [relatedPage, setRelatedPage] = useState(1)
+  const [relatedPageSize] = useState(15)
+  const [relatedTotal, setRelatedTotal] = useState(0)
+
+  const fetchCorrelatedEvents = useCallback(async (evidenceId: number, tWindow: number, keys: string, typeF: string, sevF: string, p: number) => {
+    try {
+      setLoadingRelated(true)
+      const query: any = {
+        evidence_id: evidenceId,
+        time_window_minutes: tWindow,
+        page: p,
+        page_size: relatedPageSize
+      }
+      if (keys) query.correlation_keys = keys
+      if (typeF) query.event_type = typeF
+      if (sevF) query.severity = sevF
+
+      const res = await api.get<any>(`/investigations/${id}/correlated-events`, query)
+      setRelatedEvents(res.items || [])
+      setRelatedTotal(res.total || 0)
+    } catch (err: any) {
+      setRelatedEvents([])
+      setRelatedTotal(0)
+    } finally {
+      setLoadingRelated(false)
+    }
+  }, [id, relatedPageSize])
 
   const loadData = useCallback(async () => {
     try {
@@ -61,6 +97,12 @@ export default function InvestigationDetailPage() {
   useEffect(() => {
     loadData()
   }, [loadData])
+
+  useEffect(() => {
+    if (currentEvidenceId !== null) {
+      fetchCorrelatedEvents(currentEvidenceId, timeWindow, correlationKeys, relatedTypeFilter, relatedSeverityFilter, relatedPage)
+    }
+  }, [currentEvidenceId, timeWindow, correlationKeys, relatedTypeFilter, relatedSeverityFilter, relatedPage, fetchCorrelatedEvents])
 
   const handleAddNote = async () => {
     if (!newNote.trim()) return
@@ -98,48 +140,31 @@ export default function InvestigationDetailPage() {
     if (!confirm("Are you sure you want to remove this evidence?")) return
     try {
       await api.delete(`/investigations/${id}/evidence/${evidenceId}`)
+      if (currentEvidenceId === evidenceId) {
+        setCurrentEvidenceId(null)
+        setRelatedEvents([])
+        setRelatedTotal(0)
+        setRelatedContextStr("")
+      }
       loadData()
     } catch (err: any) {
       alert("Failed to remove evidence: " + err.message)
     }
   }
 
-  const loadRelatedEvents = async (type: string, data: any) => {
-    try {
-      setLoadingRelated(true)
-      setRelatedEvents([])
-      const query: any = { page: 1, page_size: 50 }
-      let contextDesc = ""
+  const handleLoadRelated = (evidenceId: number, data: any) => {
+    setCurrentEvidenceId(evidenceId)
+    setRelatedPage(1)
 
-      const windowMs = 15 * 60 * 1000 // 15 mins
-
-      if (type === 'HOST' || type === 'AGENT') {
-        if (data.hostname) query.hostname = data.hostname
-        if (data.id && type === 'AGENT') query.agent_id = data.id
-        contextDesc = `Host/Agent: ${data.hostname || data.id} (Last 50 events)`
-      } else if (type === 'EVENT' || type === 'RAW_LOG' || type === 'ALERT') {
-        const ts = new Date(data.timestamp).getTime()
-        query.start_time = new Date(ts - windowMs).toISOString()
-        query.end_time = new Date(ts + windowMs).toISOString()
-
-        if (data.hostname) query.hostname = data.hostname
-        else if (data.source_ip) query.source_ip = data.source_ip
-
-        contextDesc = `±15 mins around ${new Date(data.timestamp).toLocaleTimeString()}`
-        if (data.hostname) contextDesc += ` for ${data.hostname}`
-      }
-
-      setRelatedContextStr(contextDesc)
-      const res = await api.get<any>('/events', query)
-      setRelatedEvents(res.items || [])
-    } catch (err: any) {
-      alert("Failed to load related events: " + err.message)
-    } finally {
-      setLoadingRelated(false)
-    }
+    let desc = `Source context: `
+    if (data.hostname) desc += data.hostname
+    else if (data.agent_id) desc += `Agent ${data.agent_id}`
+    else if (data.source_ip) desc += `IP ${data.source_ip}`
+    else if (data.event_identifier) desc += `Event ${data.event_identifier}`
+    else desc += `Item ID ${data.id}`
+    setRelatedContextStr(desc)
   }
 
-  // Evidence counts from context
   const evidenceCounts = context
     ? `${context.alerts.length} Alerts | ${context.events.length} Events | ${context.raw_logs.length} Raw Logs | ${context.hosts.length} Hosts | ${context.agents.length} Agents`
     : `${inv?.evidence?.length || 0} Total Items`
@@ -150,7 +175,6 @@ export default function InvestigationDetailPage() {
 
   return (
     <div className="space-y-6 pb-20">
-      {/* Breadcrumb + Header */}
       <div className="flex items-center space-x-4 mb-6">
         <button onClick={() => router.back()} className="text-gray-400 hover:text-white transition-colors">
           ← Back
@@ -180,11 +204,7 @@ export default function InvestigationDetailPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
-        {/* Left Column: Summary and Evidence */}
         <div className="lg:col-span-2 space-y-6">
-
-          {/* Summary Card */}
           <Card>
             <CardHeader title="Summary" />
             <CardContent>
@@ -216,7 +236,6 @@ export default function InvestigationDetailPage() {
             </CardContent>
           </Card>
 
-          {/* Grouped Evidence Card */}
           <Card>
             <CardHeader title="Grouped Evidence" />
             <CardContent className="p-0">
@@ -224,13 +243,9 @@ export default function InvestigationDetailPage() {
                 <div className="p-6 text-center text-gray-500">Loading context...</div>
               ) : (
                 <div className="divide-y divide-gray-800">
-
-                  {/* Alerts */}
                   {context.alerts.length > 0 && (
                     <div className="p-4">
-                      <h3 className="text-sm font-semibold text-gray-400 mb-3 uppercase tracking-wider">
-                        Alerts ({context.alerts.length})
-                      </h3>
+                      <h3 className="text-sm font-semibold text-gray-400 mb-3 uppercase tracking-wider">Alerts ({context.alerts.length})</h3>
                       <div className="space-y-2">
                         {context.alerts.map((item: any) => (
                           <div key={item.evidence_id} className="flex items-center justify-between bg-[#151518] p-3 rounded border border-gray-800/50">
@@ -241,11 +256,10 @@ export default function InvestigationDetailPage() {
                               </div>
                               <div className="text-xs text-gray-500">
                                 ID: {item.data.id} • {item.data.last_seen ? new Date(item.data.last_seen).toLocaleString() : 'N/A'} • {item.data.status}
-                                {item.data.occurrence_count > 1 && ` • x${item.data.occurrence_count}`}
                               </div>
                             </div>
                             <div className="flex space-x-2">
-                              <button onClick={() => loadRelatedEvents('ALERT', { ...item.data, timestamp: item.data.last_seen || item.data.first_seen })} className="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 px-2 py-1 rounded">Related Events</button>
+                              <button onClick={() => handleLoadRelated(item.evidence_id, item.data)} className="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 px-2 py-1 rounded">Related Events</button>
                               <button onClick={() => setViewAlert(item.data)} className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded">View</button>
                               <button onClick={() => removeEvidence(item.evidence_id)} className="text-xs text-red-400 hover:text-red-300 px-2 py-1">Remove</button>
                             </div>
@@ -255,12 +269,9 @@ export default function InvestigationDetailPage() {
                     </div>
                   )}
 
-                  {/* Events */}
                   {context.events.length > 0 && (
                     <div className="p-4">
-                      <h3 className="text-sm font-semibold text-gray-400 mb-3 uppercase tracking-wider">
-                        Events ({context.events.length})
-                      </h3>
+                      <h3 className="text-sm font-semibold text-gray-400 mb-3 uppercase tracking-wider">Events ({context.events.length})</h3>
                       <div className="space-y-2">
                         {context.events.map((item: any) => (
                           <div key={item.evidence_id} className="flex items-center justify-between bg-[#151518] p-3 rounded border border-gray-800/50">
@@ -268,15 +279,13 @@ export default function InvestigationDetailPage() {
                               <div className="flex items-center space-x-2 mb-1">
                                 <SeverityBadge severity={item.data.severity || 'INFO'} />
                                 <span className="text-sm font-medium text-white">{item.data.event_type}</span>
-                                <span className="text-xs text-gray-400">on {item.data.hostname || 'Unknown'}</span>
                               </div>
                               <div className="text-xs text-gray-500">
-                                {new Date(item.data.timestamp).toLocaleString()} • Src: {item.data.source_ip || 'N/A'} → Dst: {item.data.destination_ip || 'N/A'}
-                                {item.data.username && ` • User: ${item.data.username}`}
+                                {new Date(item.data.timestamp).toLocaleString()} • Src: {item.data.source_ip || 'N/A'}
                               </div>
                             </div>
                             <div className="flex space-x-2">
-                              <button onClick={() => loadRelatedEvents('EVENT', item.data)} className="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 px-2 py-1 rounded">Related Events</button>
+                              <button onClick={() => handleLoadRelated(item.evidence_id, item.data)} className="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 px-2 py-1 rounded">Related Events</button>
                               <button onClick={() => setViewEvent(item.data)} className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded">View</button>
                               <button onClick={() => removeEvidence(item.evidence_id)} className="text-xs text-red-400 hover:text-red-300 px-2 py-1">Remove</button>
                             </div>
@@ -286,12 +295,9 @@ export default function InvestigationDetailPage() {
                     </div>
                   )}
 
-                  {/* Raw Logs */}
                   {context.raw_logs.length > 0 && (
                     <div className="p-4">
-                      <h3 className="text-sm font-semibold text-gray-400 mb-3 uppercase tracking-wider">
-                        Raw Logs ({context.raw_logs.length})
-                      </h3>
+                      <h3 className="text-sm font-semibold text-gray-400 mb-3 uppercase tracking-wider">Raw Logs ({context.raw_logs.length})</h3>
                       <div className="space-y-2">
                         {context.raw_logs.map((item: any) => (
                           <div key={item.evidence_id} className="flex items-center justify-between bg-[#151518] p-3 rounded border border-gray-800/50">
@@ -301,12 +307,11 @@ export default function InvestigationDetailPage() {
                                 <span className="text-xs bg-gray-800 text-gray-300 px-1.5 py-0.5 rounded">{item.data.source_type}</span>
                               </div>
                               <div className="text-xs text-gray-500">
-                                {new Date(item.data.timestamp).toLocaleString()} • Event ID: {item.data.event_identifier || 'N/A'}
-                                {item.data.agent_id && ` • Agent: ${item.data.agent_id}`}
+                                {new Date(item.data.timestamp).toLocaleString()} • Agent: {item.data.agent_id}
                               </div>
                             </div>
                             <div className="flex space-x-2">
-                              <button onClick={() => loadRelatedEvents('RAW_LOG', item.data)} className="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 px-2 py-1 rounded">Related Events</button>
+                              <button onClick={() => handleLoadRelated(item.evidence_id, item.data)} className="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 px-2 py-1 rounded">Related Events</button>
                               <button onClick={() => setViewRawLog(item.data)} className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded">View</button>
                               <button onClick={() => removeEvidence(item.evidence_id)} className="text-xs text-red-400 hover:text-red-300 px-2 py-1">Remove</button>
                             </div>
@@ -316,29 +321,24 @@ export default function InvestigationDetailPage() {
                     </div>
                   )}
 
-                  {/* Hosts */}
                   {context.hosts.length > 0 && (
                     <div className="p-4">
-                      <h3 className="text-sm font-semibold text-gray-400 mb-3 uppercase tracking-wider">
-                        Hosts ({context.hosts.length})
-                      </h3>
+                      <h3 className="text-sm font-semibold text-gray-400 mb-3 uppercase tracking-wider">Hosts ({context.hosts.length})</h3>
                       <div className="space-y-2">
                         {context.hosts.map((item: any) => (
                           <div key={item.evidence_id} className="flex items-center justify-between bg-[#151518] p-3 rounded border border-gray-800/50">
                             <div>
                               <div className="flex items-center space-x-2 mb-1">
                                 <span className="text-sm font-medium text-white">{item.data.hostname}</span>
-                                <span className="text-xs text-gray-400">{item.data.operating_system}</span>
                                 <StatusBadge status={item.data.status || 'UNKNOWN'} />
                               </div>
                               <div className="text-xs text-gray-500">
                                 IP: {item.data.ip_address || 'Unknown'}
-                                {item.data.last_seen && ` • Last seen: ${new Date(item.data.last_seen).toLocaleString()}`}
                               </div>
                             </div>
                             <div className="flex space-x-2">
-                              <button onClick={() => loadRelatedEvents('HOST', item.data)} className="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 px-2 py-1 rounded">Related Events</button>
-                              <Link href="/hosts" className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded flex items-center justify-center">View Hosts</Link>
+                              <button onClick={() => handleLoadRelated(item.evidence_id, item.data)} className="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 px-2 py-1 rounded">Related Events</button>
+                              <Link href="/hosts" className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded flex items-center justify-center">View</Link>
                               <button onClick={() => removeEvidence(item.evidence_id)} className="text-xs text-red-400 hover:text-red-300 px-2 py-1">Remove</button>
                             </div>
                           </div>
@@ -347,29 +347,24 @@ export default function InvestigationDetailPage() {
                     </div>
                   )}
 
-                  {/* Agents */}
                   {context.agents.length > 0 && (
                     <div className="p-4">
-                      <h3 className="text-sm font-semibold text-gray-400 mb-3 uppercase tracking-wider">
-                        Agents ({context.agents.length})
-                      </h3>
+                      <h3 className="text-sm font-semibold text-gray-400 mb-3 uppercase tracking-wider">Agents ({context.agents.length})</h3>
                       <div className="space-y-2">
                         {context.agents.map((item: any) => (
                           <div key={item.evidence_id} className="flex items-center justify-between bg-[#151518] p-3 rounded border border-gray-800/50">
                             <div>
                               <div className="flex items-center space-x-2 mb-1">
                                 <span className="text-sm font-medium text-white">Agent: {item.data.agent_id}</span>
-                                <span className="text-xs text-gray-400">{item.data.hostname}</span>
                                 <StatusBadge status={item.data.status || 'OFFLINE'} />
                               </div>
                               <div className="text-xs text-gray-500">
-                                OS: {item.data.operating_system || 'N/A'}
-                                {item.data.last_seen && ` • Last seen: ${new Date(item.data.last_seen).toLocaleString()}`}
+                                {item.data.hostname} • OS: {item.data.operating_system || 'N/A'}
                               </div>
                             </div>
                             <div className="flex space-x-2">
-                              <button onClick={() => loadRelatedEvents('AGENT', item.data)} className="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 px-2 py-1 rounded">Related Events</button>
-                              <Link href="/agents" className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded flex items-center justify-center">View Agents</Link>
+                              <button onClick={() => handleLoadRelated(item.evidence_id, item.data)} className="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 px-2 py-1 rounded">Related Events</button>
+                              <Link href="/agents" className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded flex items-center justify-center">View</Link>
                               <button onClick={() => removeEvidence(item.evidence_id)} className="text-xs text-red-400 hover:text-red-300 px-2 py-1">Remove</button>
                             </div>
                           </div>
@@ -378,51 +373,84 @@ export default function InvestigationDetailPage() {
                     </div>
                   )}
 
-                  {/* Empty state */}
                   {context.alerts.length === 0 && context.events.length === 0 && context.raw_logs.length === 0 && context.hosts.length === 0 && context.agents.length === 0 && (
                     <div className="p-6 text-center text-gray-500">No evidence added to this investigation.</div>
                   )}
-
                 </div>
               )}
             </CardContent>
           </Card>
 
-          {/* Related Events Section */}
           <Card>
-            <CardHeader title="Related Events" />
+            <CardHeader title="Related Events (Deterministic Correlation)" />
             <CardContent className="p-0">
-              {!relatedContextStr ? (
+              {!currentEvidenceId ? (
                 <div className="p-6 text-center text-gray-500">
                   Click &quot;Related Events&quot; on any evidence item above to view context.
                 </div>
-              ) : loadingRelated ? (
-                <div className="p-6 text-center text-gray-500">Loading related events...</div>
-              ) : relatedEvents.length === 0 ? (
-                <div className="p-6 text-center text-gray-500">
-                  No related events found for: {relatedContextStr}
-                </div>
               ) : (
                 <div>
-                  <div className="p-3 bg-blue-900/20 border-b border-blue-800/30 text-xs text-blue-400 font-medium">
-                    Related events within: {relatedContextStr}
+                  <div className="p-4 bg-[#151518] border-b border-gray-800 flex flex-wrap gap-4 items-center">
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">Time Window</label>
+                      <select
+                        value={timeWindow}
+                        onChange={e => { setTimeWindow(Number(e.target.value)); setRelatedPage(1); }}
+                        className="bg-gray-900 border border-gray-700 rounded p-1 text-sm text-white focus:outline-none"
+                      >
+                        <option value={5}>± 5 mins</option>
+                        <option value={15}>± 15 mins</option>
+                        <option value={30}>± 30 mins</option>
+                        <option value={60}>± 60 mins</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">Correlation By</label>
+                      <select
+                        value={correlationKeys}
+                        onChange={e => { setCorrelationKeys(e.target.value); setRelatedPage(1); }}
+                        className="bg-gray-900 border border-gray-700 rounded p-1 text-sm text-white focus:outline-none"
+                      >
+                        <option value="">All Available</option>
+                        <option value="host">Host</option>
+                        <option value="agent">Agent</option>
+                        <option value="source_ip">Source IP</option>
+                        <option value="destination_ip">Destination IP</option>
+                        <option value="username">Username</option>
+                      </select>
+                    </div>
+                    <div className="flex-1">
+                      <div className="text-xs text-gray-400 text-right mt-4">{relatedContextStr}</div>
+                    </div>
                   </div>
-                  <DataTable
-                    data={relatedEvents.slice(0, 50)}
-                    keyExtractor={(r: any) => r.id.toString()}
-                    onRowClick={setViewEvent}
-                    columns={[
-                      { key: 'timestamp', title: 'Time', render: (r: any) => new Date(r.timestamp).toLocaleTimeString() },
-                      { key: 'type', title: 'Type', render: (r: any) => r.event_type || '-' },
-                      { key: 'host', title: 'Host', render: (r: any) => r.hostname || '-' },
-                      { key: 'user', title: 'User', render: (r: any) => r.username || '-' },
-                      { key: 'ip', title: 'Src IP', render: (r: any) => r.source_ip || '-' },
-                      { key: 'severity', title: 'Sev', render: (r: any) => <SeverityBadge severity={r.severity || 'INFO'} /> }
-                    ]}
-                  />
-                  {relatedEvents.length >= 50 && (
-                    <div className="p-3 text-center text-xs text-gray-500 bg-[#1e1e24] border-t border-gray-800">
-                      Additional related events available. Refine search in main events view.
+
+                  {loadingRelated ? (
+                    <div className="p-6 text-center text-gray-500">Loading correlated events...</div>
+                  ) : relatedEvents.length === 0 ? (
+                    <div className="p-6 text-center text-gray-500">
+                      No related events found for the selected context.
+                    </div>
+                  ) : (
+                    <div>
+                      <DataTable
+                        data={relatedEvents}
+                        keyExtractor={(r: any) => r.id.toString()}
+                        onRowClick={setViewEvent}
+                        columns={[
+                          { key: 'timestamp', title: 'Time', render: (r: any) => new Date(r.timestamp).toLocaleTimeString() },
+                          { key: 'type', title: 'Type', render: (r: any) => r.event_type || '-' },
+                          { key: 'host', title: 'Host', render: (r: any) => r.hostname || '-' },
+                          { key: 'ip', title: 'Src IP', render: (r: any) => r.source_ip || '-' },
+                          { key: 'reason', title: 'Reason', render: (r: any) => <span className="text-green-400 font-medium text-xs">{r.correlation_reason || '-'}</span> },
+                          { key: 'severity', title: 'Sev', render: (r: any) => <SeverityBadge severity={r.severity || 'INFO'} /> }
+                        ]}
+                      />
+                      <Pagination
+                        currentPage={relatedPage}
+                        pageSize={relatedPageSize}
+                        total={relatedTotal}
+                        onPageChange={setRelatedPage}
+                      />
                     </div>
                   )}
                 </div>
@@ -431,7 +459,6 @@ export default function InvestigationDetailPage() {
           </Card>
         </div>
 
-        {/* Right Column: Notes */}
         <div className="space-y-6">
           <Card className="h-[600px] flex flex-col">
             <CardHeader title="Analyst Notes" />
@@ -469,10 +496,8 @@ export default function InvestigationDetailPage() {
             </CardContent>
           </Card>
         </div>
-
       </div>
 
-      {/* Modals */}
       {viewEvent && <EventDetailsModal event={viewEvent} onClose={() => setViewEvent(null)} />}
       {viewAlert && <AlertDetailsModal alert={viewAlert} onClose={() => setViewAlert(null)} />}
       {viewRawLog && <RawLogDetailsModal log={viewRawLog} onClose={() => setViewRawLog(null)} />}
