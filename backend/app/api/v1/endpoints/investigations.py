@@ -12,7 +12,8 @@ from backend.app.models.investigation import Investigation as InvestigationModel
 from backend.app.schemas.investigation import (
     Investigation, InvestigationCreate, InvestigationUpdate, InvestigationStatusUpdate,
     InvestigationEvidence as EvidenceSchema, InvestigationEvidenceCreate,
-    InvestigationNote as NoteSchema, InvestigationNoteCreate, InvestigationSummary
+    InvestigationNote as NoteSchema, InvestigationNoteCreate, InvestigationSummary,
+    InvestigationEvidenceSummary
 )
 from backend.app.schemas.pagination import PaginatedResponse
 from backend.app.models.alert import Alert as AlertModel
@@ -429,6 +430,39 @@ async def get_investigation_context(id: int, db: AsyncSession = Depends(get_db))
             })
 
     return context
+
+
+@router.get("/{id}/summary", response_model=InvestigationEvidenceSummary)
+async def get_investigation_summary(id: int, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(InvestigationModel).where(InvestigationModel.id == id))
+    inv = result.scalars().first()
+    if not inv:
+        raise HTTPException(status_code=404, detail="Investigation not found")
+
+    ev_res = await db.execute(
+        select(InvestigationEvidence.evidence_type, func.count(InvestigationEvidence.id).label("cnt"))
+        .where(InvestigationEvidence.investigation_id == id)
+        .group_by(InvestigationEvidence.evidence_type)
+    )
+    counts: dict = {"ALERT": 0, "EVENT": 0, "RAW_LOG": 0, "HOST": 0, "AGENT": 0}
+    for ev_type, cnt in ev_res.all():
+        counts[ev_type] = cnt
+
+    note_res = await db.execute(
+        select(func.count(InvestigationNote.id)).where(InvestigationNote.investigation_id == id)
+    )
+    note_count = note_res.scalar_one()
+
+    total = sum(counts.values())
+    return InvestigationEvidenceSummary(
+        alerts=counts["ALERT"],
+        events=counts["EVENT"],
+        raw_logs=counts["RAW_LOG"],
+        hosts=counts["HOST"],
+        agents=counts["AGENT"],
+        notes=note_count,
+        total_evidence=total
+    )
 
 
 from datetime import timedelta

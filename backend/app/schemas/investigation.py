@@ -5,7 +5,7 @@ from backend.app.models.investigation import InvestigationStatus, InvestigationS
 
 # Notes schemas
 class InvestigationNoteCreate(BaseModel):
-    content: str
+    content: str = Field(..., min_length=1, max_length=2000)
     author: Optional[str] = None
 
 class InvestigationNote(BaseModel):
@@ -84,3 +84,12 @@ class Investigation(InvestigationInDBBase):
 
 class InvestigationSummary(InvestigationInDBBase):
     evidence_count: int = 0
+
+class InvestigationEvidenceSummary(BaseModel):
+    alerts: int = 0
+    events: int = 0
+    raw_logs: int = 0
+    hosts: int = 0
+    agents: int = 0
+    notes: int = 0
+    total_evidence: int = 0

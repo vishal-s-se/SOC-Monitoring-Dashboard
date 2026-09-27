@@ -331,3 +331,69 @@ async def test_investigation_correlated_events(client: AsyncClient, sample_data)
     # Nonexistent evidence
     nf_resp = await client.get(f"/api/v1/investigations/{inv_id}/correlated-events?evidence_id=999999")
     assert nf_resp.status_code == 404
+
+@pytest.mark.asyncio
+async def test_investigation_summary_endpoint(client: AsyncClient):
+    create_resp = await client.post("/api/v1/investigations/", json={
+        "title": "Summary Test Investigation",
+        "severity": "MEDIUM",
+    })
+    assert create_resp.status_code == 201
+    inv_id = create_resp.json()["id"]
+
+    await client.post(f"/api/v1/investigations/{inv_id}/evidence", json={
+        "evidence_type": "ALERT",
+        "reference_id": "101"
+    })
+    await client.post(f"/api/v1/investigations/{inv_id}/evidence", json={
+        "evidence_type": "EVENT",
+        "reference_id": "201"
+    })
+    await client.post(f"/api/v1/investigations/{inv_id}/evidence", json={
+        "evidence_type": "EVENT",
+        "reference_id": "202"
+    })
+    await client.post(f"/api/v1/investigations/{inv_id}/notes", json={
+        "content": "Summary test note",
+        "author": "Tester"
+    })
+
+    summary_resp = await client.get(f"/api/v1/investigations/{inv_id}/summary")
+    assert summary_resp.status_code == 200
+    s = summary_resp.json()
+    assert s["alerts"] == 1
+    assert s["events"] == 2
+    assert s["notes"] == 1
+    assert s["total_evidence"] == 3
+
+    nf_resp = await client.get("/api/v1/investigations/999999/summary")
+    assert nf_resp.status_code == 404
+
+@pytest.mark.asyncio
+async def test_investigation_note_validation(client: AsyncClient):
+    create_resp = await client.post("/api/v1/investigations/", json={
+        "title": "Note Validation Test",
+        "severity": "LOW",
+    })
+    assert create_resp.status_code == 201
+    inv_id = create_resp.json()["id"]
+
+    empty_resp = await client.post(f"/api/v1/investigations/{inv_id}/notes", json={
+        "content": "",
+        "author": "Tester"
+    })
+    assert empty_resp.status_code == 422
+
+    long_content = "x" * 2001
+    long_resp = await client.post(f"/api/v1/investigations/{inv_id}/notes", json={
+        "content": long_content,
+        "author": "Tester"
+    })
+    assert long_resp.status_code == 422
+
+    valid_resp = await client.post(f"/api/v1/investigations/{inv_id}/notes", json={
+        "content": "Valid note content",
+        "author": "Tester"
+    })
+    assert valid_resp.status_code == 201
+    assert valid_resp.json()["content"] == "Valid note content"
