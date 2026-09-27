@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import './globals.css'
-import Nav from '../components/nav'
+import Nav from '@/components/nav'
+import TopBar from '@/components/TopBar'
 
 export const metadata: Metadata = {
   title: 'SOC Monitor',
@@ -15,14 +16,14 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <div className="flex h-screen bg-gray-100 dark:bg-gray-900">
-          {/* Navigation Sidebar */}
+        <div className="flex h-screen bg-gray-900 text-gray-100 overflow-hidden">
           <Nav />
-          
-          {/* Main Content Area */}
-          <main className="flex-1 overflow-y-auto p-8">
-            {children}
-          </main>
+          <div className="flex-1 flex flex-col min-w-0">
+            <TopBar />
+            <main className="flex-1 overflow-y-auto p-6 bg-gray-950">
+              {children}
+            </main>
+          </div>
         </div>
       </body>
     </html>
