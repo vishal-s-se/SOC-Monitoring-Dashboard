@@ -12,7 +12,10 @@ from backend.app.api.v1.endpoints import (
     timeline,
     mitre,
     ip_investigation,
-    host_investigation
+    host_investigation,
+    user_context,
+    event_context,
+    alert_context
 )
 
 api_router = APIRouter()
@@ -29,3 +32,6 @@ api_router.include_router(timeline.router, prefix="/attack-timeline", tags=["att
 api_router.include_router(mitre.router, prefix="/mitre", tags=["mitre"])
 api_router.include_router(ip_investigation.router, prefix="/ip-investigation", tags=["ip-investigation"])
 api_router.include_router(host_investigation.router, prefix="/host-investigation", tags=["host-investigation"])
+api_router.include_router(user_context.router, prefix="/user-context", tags=["user-context"])
+api_router.include_router(event_context.router, prefix="/events", tags=["event-context"])
+api_router.include_router(alert_context.router, prefix="/alerts", tags=["alert-context"])

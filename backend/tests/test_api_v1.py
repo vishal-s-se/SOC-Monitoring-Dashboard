@@ -1952,3 +1952,256 @@ async def test_host_investigation_phase_7f2(client: AsyncClient, db: AsyncSessio
     assert res_bad_time.status_code == 400
 
 
+@pytest.mark.asyncio
+async def test_threat_context_phase_7f3(client: AsyncClient, db: AsyncSession):
+    from backend.app.services.mitre_seeder import seed_mitre_catalog
+    await seed_mitre_catalog(db)
+
+    base_time = datetime.now(timezone.utc) - timedelta(hours=2)
+    test_username = f"analyst_{uuid.uuid4().hex[:6]}"
+
+    host_ctx = Host(
+        host_identifier=f"ctx-host-{uuid.uuid4().hex[:6]}",
+        hostname=f"ctx-srv-{uuid.uuid4().hex[:4]}",
+        operating_system="linux",
+        os_version="Ubuntu 22.04",
+        ip_address="10.50.0.10",
+        status="ONLINE",
+        created_at=base_time,
+        last_seen=base_time + timedelta(hours=1)
+    )
+    db.add(host_ctx)
+    await db.flush()
+
+    agent_ctx = Agent(
+        agent_id=f"agt-ctx-{uuid.uuid4().hex[:6]}",
+        host_id=host_ctx.id,
+        hostname=host_ctx.hostname,
+        operating_system="linux",
+        agent_version="1.5.0",
+        status="ONLINE",
+        ip_address="10.50.0.10",
+        registered_at=base_time,
+        last_heartbeat=base_time + timedelta(hours=1),
+        last_seen=base_time + timedelta(hours=1)
+    )
+    db.add(agent_ctx)
+    await db.flush()
+
+    ev_a = Event(
+        event_id=f"evt-ctx-a-{uuid.uuid4().hex[:6]}",
+        timestamp=base_time,
+        host_id=host_ctx.id,
+        agent_id=agent_ctx.id,
+        hostname=host_ctx.hostname,
+        operating_system="linux",
+        source_type="syslog",
+        event_category="authentication",
+        event_type="ssh_login",
+        username=test_username,
+        source_ip="10.50.0.5",
+        destination_ip="10.50.0.10",
+        source_port=51234,
+        destination_port=22,
+        protocol="TCP",
+        action="login_success",
+        severity="INFO"
+    )
+    ev_b = Event(
+        event_id=f"evt-ctx-b-{uuid.uuid4().hex[:6]}",
+        timestamp=base_time + timedelta(minutes=10),
+        host_id=host_ctx.id,
+        agent_id=agent_ctx.id,
+        hostname=host_ctx.hostname,
+        operating_system="linux",
+        source_type="syslog",
+        event_category="process",
+        event_type="process_spawn",
+        username=test_username,
+        source_ip="10.50.0.10",
+        destination_ip="8.8.8.8",
+        source_port=54321,
+        destination_port=443,
+        protocol="TCP",
+        action="exec",
+        severity="MEDIUM"
+    )
+    ev_c = Event(
+        event_id=f"evt-ctx-c-{uuid.uuid4().hex[:6]}",
+        timestamp=base_time + timedelta(minutes=5),
+        host_id=host_ctx.id,
+        agent_id=agent_ctx.id,
+        hostname=host_ctx.hostname,
+        operating_system="linux",
+        source_type="syslog",
+        event_category="network",
+        event_type="connection_closed",
+        username=test_username,
+        source_ip="10.50.0.10",
+        destination_ip="10.50.0.1",
+        source_port=49999,
+        destination_port=80,
+        protocol="TCP",
+        action="close",
+        severity="LOW"
+    )
+    db.add_all([ev_a, ev_b, ev_c])
+    await db.flush()
+
+    rule_ctx2 = DetectionRule(
+        rule_id=f"rule-ctx-{uuid.uuid4().hex[:6]}",
+        name="Context Test Rule",
+        description="Rule for context testing",
+        severity="HIGH",
+        conditions=[{"field": "event_type", "operator": "equals", "value": "process_spawn"}]
+    )
+    db.add(rule_ctx2)
+    await db.flush()
+
+    alert_ctx2 = Alert(
+        alert_id=f"al-ctx-{uuid.uuid4().hex[:6]}",
+        title="Context Test Alert",
+        description="Alert for context testing",
+        severity="HIGH",
+        status="OPEN",
+        occurrence_count=1,
+        fingerprint=f"fp-ctx-{uuid.uuid4().hex[:8]}",
+        rule_id=rule_ctx2.id,
+        agent_id=agent_ctx.id,
+        host_id=host_ctx.id,
+        first_seen=base_time + timedelta(minutes=10),
+        last_seen=base_time + timedelta(minutes=10)
+    )
+    db.add(alert_ctx2)
+    await db.flush()
+
+    dr_ctx = DetectionResult(rule_id=rule_ctx2.id, event_id=ev_b.id, alert_id=alert_ctx2.id)
+    db.add(dr_ctx)
+    await db.flush()
+
+    rule_map_ctx = MitreMapping(
+        technique_id="T1059",
+        target_type=MitreTargetType.DETECTION_RULE.value,
+        target_id=str(rule_ctx2.id),
+        mapping_source=MitreMappingSource.DOCUMENTED_RULE.value,
+        confidence=MitreConfidence.HIGH.value
+    )
+    db.add(rule_map_ctx)
+    await db.flush()
+
+    inv_ctx2 = Investigation(
+        title="Context Test Investigation",
+        description="Investigation for context phase",
+        status="OPEN",
+        severity="HIGH"
+    )
+    db.add(inv_ctx2)
+    await db.flush()
+
+    inv_ev_a = InvestigationEvidence(
+        investigation_id=inv_ctx2.id,
+        evidence_type="EVENT",
+        reference_id=str(ev_a.id),
+        description="Event A evidence"
+    )
+    inv_ev_al = InvestigationEvidence(
+        investigation_id=inv_ctx2.id,
+        evidence_type="ALERT",
+        reference_id=str(alert_ctx2.id),
+        description="Alert evidence"
+    )
+    db.add_all([inv_ev_a, inv_ev_al])
+    await db.commit()
+
+    # Test A: User Context Endpoint
+    res_user = await client.get(f"/api/v1/user-context/{test_username}")
+    assert res_user.status_code == 200, f"User context failed: {res_user.text}"
+    uc = res_user.json()
+
+    assert uc["summary"]["username"] == test_username
+    assert uc["summary"]["total_events"] == 3
+    assert uc["summary"]["hosts_count"] >= 1
+    assert uc["summary"]["source_ips_count"] >= 1
+    assert uc["summary"]["destination_ips_count"] >= 1
+    assert uc["summary"]["alerts_count"] >= 1
+    assert uc["summary"]["investigations_count"] >= 1
+
+    host_hostnames = [h["hostname"] for h in uc["hosts"]]
+    assert host_ctx.hostname in host_hostnames
+
+    categories = [a["event_category"] for a in uc["activity_breakdown"]]
+    assert "authentication" in categories
+    assert "process" in categories
+
+    assert alert_ctx2.id in [a["id"] for a in uc["alerts"]]
+    assert inv_ctx2.id in [i["id"] for i in uc["investigations"]]
+
+    res_user_evs = await client.get(f"/api/v1/user-context/{test_username}/events")
+    assert res_user_evs.status_code == 200
+    assert res_user_evs.json()["total"] == 3
+
+    res_ue_cat = await client.get(f"/api/v1/user-context/{test_username}/events?event_category=authentication")
+    assert res_ue_cat.status_code == 200
+    assert res_ue_cat.json()["total"] == 1
+
+    res_404_user = await client.get("/api/v1/user-context/definitely_not_a_real_user_xyz9999")
+    assert res_404_user.status_code == 404
+
+    # Test B: Event Context Endpoint
+    res_ev_ctx = await client.get(f"/api/v1/events/{ev_b.event_id}/context")
+    assert res_ev_ctx.status_code == 200, f"Event context failed: {res_ev_ctx.text}"
+    ec = res_ev_ctx.json()
+
+    assert ec["event_id"] == ev_b.event_id
+    assert ec["id"] == ev_b.id
+    assert ec["username"] == test_username
+    assert ec["event_category"] == "process"
+    assert ec["host"] is not None
+    assert ec["host"]["hostname"] == host_ctx.hostname
+    assert ec["agent"] is not None
+    assert ec["agent"]["agent_id"] == agent_ctx.agent_id
+    assert alert_ctx2.id in [a["id"] for a in ec["alerts"]]
+    nearby_ids = [ne["id"] for ne in ec["nearby_events"]]
+    assert ev_a.id in nearby_ids or ev_c.id in nearby_ids
+
+    res_ev_ctx_id = await client.get(f"/api/v1/events/{ev_b.id}/context")
+    assert res_ev_ctx_id.status_code == 200
+    assert res_ev_ctx_id.json()["event_id"] == ev_b.event_id
+
+    res_404_ev = await client.get("/api/v1/events/nonexistent-event-xyz-99999/context")
+    assert res_404_ev.status_code == 404
+
+    # Test C: Alert Context Endpoint
+    res_al_ctx = await client.get(f"/api/v1/alerts/{alert_ctx2.alert_id}/context")
+    assert res_al_ctx.status_code == 200, f"Alert context failed: {res_al_ctx.text}"
+    ac = res_al_ctx.json()
+
+    assert ac["id"] == alert_ctx2.id
+    assert ac["alert_id"] == alert_ctx2.alert_id
+    assert ac["title"] == "Context Test Alert"
+    assert ac["rule"] is not None
+    assert ac["rule"]["name"] == "Context Test Rule"
+    assert ac["host"] is not None
+    assert ac["host"]["hostname"] == host_ctx.hostname
+    assert ac["agent"] is not None
+    assert ac["agent"]["agent_id"] == agent_ctx.agent_id
+    assert ev_b.id in [e["id"] for e in ac["triggering_events"]]
+    assert len(ac["observed_ips"]) >= 1
+    assert "T1059" in [m["technique_id"] for m in ac["mitre_techniques"]]
+    assert inv_ctx2.id in [i["id"] for i in ac["investigations"]]
+
+    res_al_ctx_id = await client.get(f"/api/v1/alerts/{alert_ctx2.id}/context")
+    assert res_al_ctx_id.status_code == 200
+    assert res_al_ctx_id.json()["alert_id"] == alert_ctx2.alert_id
+
+    res_404_al = await client.get("/api/v1/alerts/definitely-not-real-alert-xyz/context")
+    assert res_404_al.status_code == 404
+
+    valid_start = (base_time + timedelta(minutes=5)).isoformat()
+    valid_end = (base_time + timedelta(minutes=15)).isoformat()
+    res_uc_time = await client.get(
+        f"/api/v1/user-context/{test_username}",
+        params={"start_time": valid_start, "end_time": valid_end}
+    )
+    assert res_uc_time.status_code == 200
+    assert res_uc_time.json()["summary"]["total_events"] == 2

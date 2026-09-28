@@ -1,10 +1,31 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { SeverityBadge } from "./SeverityBadge";
+import { StatusBadge } from "./StatusBadge";
 import { AddToInvestigationModal } from "./AddToInvestigationModal";
+import { api } from "@/lib/api";
 
 export function EventDetailsModal({ event, onClose }: { event: any, onClose: () => void }) {
   const [showInvestigateModal, setShowInvestigateModal] = useState(false);
+  const [context, setContext] = useState<any | null>(null);
+  const [contextLoading, setContextLoading] = useState(false);
+  const [showContext, setShowContext] = useState(false);
+
+  useEffect(() => {
+    if (!event || !showContext) return;
+    setContextLoading(true);
+    async function loadContext() {
+      try {
+        const data = await api.get<any>(`/events/${encodeURIComponent(event.event_id)}/context`);
+        setContext(data);
+      } catch {
+        setContext(null);
+      } finally {
+        setContextLoading(false);
+      }
+    }
+    loadContext();
+  }, [event, showContext]);
 
   if (!event) return null;
 
@@ -31,6 +52,12 @@ export function EventDetailsModal({ event, onClose }: { event: any, onClose: () 
             >
               <span>View in Timeline</span>
             </a>
+            <button
+              onClick={() => setShowContext(v => !v)}
+              className={`text-xs px-2.5 py-1 rounded transition-colors ${showContext ? 'bg-purple-700 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'}`}
+            >
+              {showContext ? 'Hide Context' : 'Observed Context'}
+            </button>
           </div>
           <button
             onClick={onClose}
@@ -88,13 +115,23 @@ export function EventDetailsModal({ event, onClose }: { event: any, onClose: () 
             </div>
             <div>
               <p className="text-xs text-gray-500 uppercase">User</p>
-              <p className="text-sm text-gray-200">{event.username || 'N/A'}</p>
+              {event.username ? (
+                <Link
+                  href={`/user-context?user=${encodeURIComponent(event.username)}`}
+                  onClick={onClose}
+                  className="text-sm text-blue-400 hover:text-blue-300 hover:underline"
+                >
+                  {event.username}
+                </Link>
+              ) : (
+                <p className="text-sm text-gray-200">N/A</p>
+              )}
             </div>
           </div>
 
           {(event.source_ip || event.destination_ip || event.action || event.protocol) && (
             <div className="border-t border-gray-800 pt-4">
-              <h4 className="text-sm font-semibold text-gray-300 mb-3">Network & Action</h4>
+              <h4 className="text-sm font-semibold text-gray-300 mb-3">Network &amp; Action</h4>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div>
                   <p className="text-xs text-gray-500 uppercase">Source IP</p>
@@ -141,6 +178,111 @@ export function EventDetailsModal({ event, onClose }: { event: any, onClose: () 
                   <p className="text-sm text-gray-200">{event.action || 'N/A'}</p>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* Observed Context Panel */}
+          {showContext && (
+            <div className="border-t border-purple-800/60 pt-4 space-y-4">
+              <h4 className="text-sm font-semibold text-purple-300 flex items-center gap-2">
+                <span>Observed Context</span>
+                {contextLoading && <span className="text-xs text-gray-400 animate-pulse">Loading...</span>}
+              </h4>
+
+              {!contextLoading && context && (
+                <>
+                  {/* Alerts */}
+                  {context.alerts && context.alerts.length > 0 && (
+                    <div>
+                      <p className="text-xs text-gray-400 uppercase mb-2">Associated Alerts ({context.alerts.length})</p>
+                      <div className="space-y-1">
+                        {context.alerts.map((a: any) => (
+                          <div key={a.id} className="flex items-center justify-between bg-gray-800 rounded px-3 py-2">
+                            <div className="flex items-center gap-2">
+                              <SeverityBadge severity={a.severity} />
+                              <span className="text-sm text-white">{a.title}</span>
+                              {a.rule_name && <span className="text-xs text-gray-400">via {a.rule_name}</span>}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <StatusBadge status={a.status} />
+                              <Link
+                                href={`/attack-timeline?alert_id=${a.id}`}
+                                onClick={onClose}
+                                className="text-xs text-indigo-400 hover:underline"
+                              >
+                                Timeline
+                              </Link>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Investigations */}
+                  {context.investigations && context.investigations.length > 0 && (
+                    <div>
+                      <p className="text-xs text-gray-400 uppercase mb-2">Linked Investigations ({context.investigations.length})</p>
+                      <div className="space-y-1">
+                        {context.investigations.map((i: any) => (
+                          <div key={i.id} className="flex items-center justify-between bg-gray-800 rounded px-3 py-2">
+                            <Link
+                              href={`/investigations/${i.id}`}
+                              onClick={onClose}
+                              className="text-sm text-blue-400 hover:underline"
+                            >
+                              {i.title}
+                            </Link>
+                            <div className="flex items-center gap-2">
+                              <SeverityBadge severity={i.severity} />
+                              <StatusBadge status={i.status} />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* MITRE */}
+                  {context.mitre_techniques && context.mitre_techniques.length > 0 && (
+                    <div>
+                      <p className="text-xs text-gray-400 uppercase mb-2">MITRE ATT&CK ({context.mitre_techniques.length})</p>
+                      <div className="space-y-1">
+                        {context.mitre_techniques.map((m: any) => (
+                          <div key={m.technique_id} className="flex items-center gap-3 bg-gray-800 rounded px-3 py-2">
+                            <span className="font-mono text-xs font-bold text-red-300 bg-red-950/60 border border-red-800/50 px-1.5 py-0.5 rounded">{m.technique_id}</span>
+                            <span className="text-sm text-white">{m.name}</span>
+                            {m.tactics && m.tactics.length > 0 && (
+                              <span className="text-xs text-blue-300">({m.tactics.map((t: any) => t.name).join(', ')})</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Nearby Events */}
+                  {context.nearby_events && context.nearby_events.length > 0 && (
+                    <div>
+                      <p className="text-xs text-gray-400 uppercase mb-2">Nearby Events on Same Host (±15 min, {context.nearby_events.length})</p>
+                      <div className="space-y-1 max-h-40 overflow-y-auto">
+                        {context.nearby_events.map((ne: any) => (
+                          <div key={ne.id} className="flex items-center justify-between bg-gray-800/60 rounded px-3 py-1.5 text-xs">
+                            <span className="text-gray-400">{new Date(ne.timestamp).toLocaleTimeString()}</span>
+                            <span className="text-gray-200">{ne.event_type || ne.event_category}</span>
+                            {ne.username && <span className="text-gray-400">{ne.username}</span>}
+                            <SeverityBadge severity={ne.severity || 'INFO'} />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {context.alerts?.length === 0 && context.investigations?.length === 0 && context.mitre_techniques?.length === 0 && context.nearby_events?.length === 0 && (
+                    <p className="text-sm text-gray-500 italic">No related alerts, investigations, MITRE mappings, or nearby events found for this event.</p>
+                  )}
+                </>
+              )}
             </div>
           )}
 
