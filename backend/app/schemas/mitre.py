@@ -125,6 +125,7 @@ class MitreMapping(BaseModel):
     created_by: Optional[str] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
+    is_inherited: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 

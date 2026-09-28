@@ -353,10 +353,12 @@ async def list_mappings(
     target_id: Optional[str] = Query(None, description="Target entity ID"),
     technique_id: Optional[str] = Query(None, description="Filter by MITRE technique ID"),
     mapping_source: Optional[MitreMappingSource] = Query(None, description="Filter by mapping source"),
+    include_inherited: bool = Query(True, description="When querying an ALERT, include mappings inherited from its Detection Rule"),
     db: AsyncSession = Depends(get_db)
 ):
     """
     Retrieve MITRE technique mappings associated with SOC entities (rules, alerts, investigations, events).
+    For alerts, optionally includes mappings inherited from the associated detection rule.
     """
     stmt = (
         select(MitreMappingModel)
@@ -382,6 +384,8 @@ async def list_mappings(
     mappings = res.scalars().all()
 
     result_items = []
+    seen_keys = set()
+
     for m in mappings:
         tactics = []
         tech_name = None
@@ -397,6 +401,7 @@ async def list_mappings(
             ]
             tactics.sort(key=lambda x: x.order_index)
 
+        seen_keys.add((m.technique_id, m.target_type, m.target_id))
         result_items.append(
             MitreMapping(
                 id=m.id,
@@ -411,9 +416,83 @@ async def list_mappings(
                 notes=m.notes,
                 created_by=m.created_by,
                 created_at=m.created_at,
-                updated_at=m.updated_at
+                updated_at=m.updated_at,
+                is_inherited=False
             )
         )
+
+    # If querying a specific ALERT with include_inherited=True, fetch mappings from its Detection Rule
+    if target_type == MitreTargetType.ALERT and target_id and include_inherited:
+        # Find the alert's rule_id
+        target_id_str = str(target_id).strip()
+        if target_id_str.isdigit():
+            al_res = await db.execute(select(AlertModel).where(AlertModel.id == int(target_id_str)))
+        else:
+            al_res = await db.execute(select(AlertModel).where(AlertModel.alert_id == target_id_str))
+        alert_obj = al_res.scalars().first()
+
+        if alert_obj and alert_obj.rule_id:
+            # Query detection rule mappings for this rule
+            # Rule target_id in mappings could be string of rule.id or rule.rule_id
+            rule_id_candidates = [str(alert_obj.rule_id)]
+            # Find DetectionRule entity to also check rule_id string
+            rule_lookup = await db.execute(select(DetectionRuleModel).where(DetectionRuleModel.id == alert_obj.rule_id))
+            rule_ent = rule_lookup.scalars().first()
+            if rule_ent and rule_ent.rule_id:
+                rule_id_candidates.append(str(rule_ent.rule_id))
+
+            rule_stmt = (
+                select(MitreMappingModel)
+                .options(
+                    selectinload(MitreMappingModel.technique)
+                    .selectinload(MitreTechniqueModel.tactics)
+                    .selectinload(MitreTechniqueTacticModel.tactic)
+                )
+                .where(
+                    MitreMappingModel.target_type == MitreTargetType.DETECTION_RULE.value,
+                    MitreMappingModel.target_id.in_(rule_id_candidates)
+                )
+            )
+            rule_mappings_res = await db.execute(rule_stmt)
+            rule_mappings = rule_mappings_res.scalars().all()
+
+            for rm in rule_mappings:
+                # Do not duplicate if alert already directly mapped this technique
+                if any(it.technique_id == rm.technique_id for it in result_items):
+                    continue
+
+                tactics = []
+                tech_name = None
+                if rm.technique:
+                    tech_name = rm.technique.name
+                    tactics = [
+                        MitreTacticSummary(
+                            tactic_id=tt.tactic.tactic_id,
+                            name=tt.tactic.name,
+                            order_index=tt.tactic.order_index
+                        )
+                        for tt in rm.technique.tactics if tt.tactic
+                    ]
+                    tactics.sort(key=lambda x: x.order_index)
+
+                result_items.append(
+                    MitreMapping(
+                        id=rm.id,
+                        technique_id=rm.technique_id,
+                        technique_name=tech_name,
+                        tactics=tactics,
+                        target_type=MitreTargetType.ALERT.value,
+                        target_id=target_id_str,
+                        mapping_source=rm.mapping_source,
+                        confidence=rm.confidence,
+                        evidence_reference=f"Inherited from Rule {rm.target_id}",
+                        notes=rm.notes,
+                        created_by=rm.created_by,
+                        created_at=rm.created_at,
+                        updated_at=rm.updated_at,
+                        is_inherited=True
+                    )
+                )
 
     return result_items
 
@@ -497,15 +576,26 @@ async def create_mapping(mapping_in: MitreMappingCreate, db: AsyncSession = Depe
     await db.commit()
     await db.refresh(new_mapping)
 
-    # Broadcast WebSocket update if relevant target
+    # Broadcast WebSocket updates
     try:
         from backend.app.engine.event_bus import event_bus
-        await event_bus.publish("mitre_mapping_created", {
+        payload = {
             "id": new_mapping.id,
             "technique_id": new_mapping.technique_id,
             "target_type": new_mapping.target_type,
-            "target_id": new_mapping.target_id
-        })
+            "target_id": new_mapping.target_id,
+            "confidence": new_mapping.confidence,
+            "mapping_source": new_mapping.mapping_source
+        }
+        await event_bus.publish("mitre_mapping_created", payload)
+        if new_mapping.target_type == MitreTargetType.INVESTIGATION.value:
+            await event_bus.publish("investigation_mitre_mapping_added", {
+                "investigation_id": int(new_mapping.target_id),
+                "mapping_id": new_mapping.id,
+                "technique_id": new_mapping.technique_id,
+                "confidence": new_mapping.confidence,
+                "mapping_source": new_mapping.mapping_source
+            })
     except Exception:
         pass
 
@@ -546,7 +636,8 @@ async def create_mapping(mapping_in: MitreMappingCreate, db: AsyncSession = Depe
         notes=new_mapping.notes,
         created_by=new_mapping.created_by,
         created_at=new_mapping.created_at,
-        updated_at=new_mapping.updated_at
+        updated_at=new_mapping.updated_at,
+        is_inherited=False
     )
 
 
@@ -568,12 +659,19 @@ async def delete_mapping(mapping_id: int, db: AsyncSession = Depends(get_db)):
 
     try:
         from backend.app.engine.event_bus import event_bus
-        await event_bus.publish("mitre_mapping_deleted", {
+        payload = {
             "id": mapping_id,
             "technique_id": technique_id,
             "target_type": target_type,
             "target_id": target_id
-        })
+        }
+        await event_bus.publish("mitre_mapping_deleted", payload)
+        if target_type == MitreTargetType.INVESTIGATION.value and target_id.isdigit():
+            await event_bus.publish("investigation_mitre_mapping_removed", {
+                "investigation_id": int(target_id),
+                "mapping_id": mapping_id,
+                "technique_id": technique_id
+            })
     except Exception:
         pass
 

@@ -1149,3 +1149,51 @@ async def test_mitre_attack_foundation_phase_7e1(client: AsyncClient, db: AsyncS
     # Verify deleted
     res_check = await client.get(f"/api/v1/mitre/mappings?target_type=INVESTIGATION&target_id={inv.id}")
     assert len(res_check.json()) == 0
+
+    # 16. Phase 7E-2: Alert Inheritance of Detection Rule Mappings
+    # Create a new alert referencing the rule mapped to T1059.001
+    alert_inherited = Alert(
+        alert_id=f"alt-inherit-{uuid.uuid4().hex[:8]}",
+        rule_id=rule.id,
+        title="Inherited Rule Alert Test",
+        severity="HIGH",
+        status="OPEN",
+        fingerprint=f"RUL-INHERIT-{uuid.uuid4().hex[:8]}"
+    )
+    db.add(alert_inherited)
+    await db.commit()
+
+    # Query alert mappings with include_inherited=True (default)
+    res_alert_mapped = await client.get(f"/api/v1/mitre/mappings?target_type=ALERT&target_id={alert_inherited.id}")
+    assert res_alert_mapped.status_code == 200
+    alert_mitre_list = res_alert_mapped.json()
+    assert len(alert_mitre_list) >= 1
+    inherit_item = next((it for it in alert_mitre_list if it["technique_id"] == "T1059.001"), None)
+    assert inherit_item is not None
+    assert inherit_item["is_inherited"] is True
+
+    # Query with include_inherited=False should return empty
+    res_alert_no_inherit = await client.get(f"/api/v1/mitre/mappings?target_type=ALERT&target_id={alert_inherited.id}&include_inherited=false")
+    assert res_alert_no_inherit.status_code == 200
+    assert len(res_alert_no_inherit.json()) == 0
+
+    # 17. Phase 7E-2: Investigation Context includes detection rule mappings inherited via attached alerts
+    from backend.app.models.investigation import InvestigationEvidence
+    inv_rule_test = Investigation(title="Rule Inherit Inv", severity="HIGH", status="OPEN")
+    db.add(inv_rule_test)
+    await db.commit()
+
+    # Attach the inherited alert as evidence
+    inv_ev = InvestigationEvidence(
+        investigation_id=inv_rule_test.id,
+        evidence_type="ALERT",
+        reference_id=str(alert_inherited.id),
+        added_by="analyst"
+    )
+    db.add(inv_ev)
+    await db.commit()
+
+    res_inv_inherit_ctx = await client.get(f"/api/v1/investigations/{inv_rule_test.id}/context")
+    assert res_inv_inherit_ctx.status_code == 200
+    inv_ctx_mitre = res_inv_inherit_ctx.json()["mitre"]
+    assert any(m["technique_id"] == "T1059.001" and m["is_direct"] is False for m in inv_ctx_mitre)

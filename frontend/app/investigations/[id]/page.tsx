@@ -16,6 +16,7 @@ import { EventDetailsModal } from '@/components/ui/EventDetailsModal'
 import { AlertDetailsModal } from '@/components/ui/AlertDetailsModal'
 import { RawLogDetailsModal } from '@/components/ui/RawLogDetailsModal'
 import { MitreTechniqueDetailsModal } from '@/components/ui/MitreTechniqueDetailsModal'
+import { AddMitreMappingModal } from '@/components/ui/AddMitreMappingModal'
 
 const NOTE_MAX_LENGTH = 2000
 
@@ -43,6 +44,7 @@ export default function InvestigationDetailPage() {
   const [showAssignModal, setShowAssignModal] = useState(false)
   const [assignee, setAssignee] = useState("")
 
+  const [showAddMitreModal, setShowAddMitreModal] = useState(false)
   const [viewEvent, setViewEvent] = useState<any>(null)
   const [viewAlert, setViewAlert] = useState<any>(null)
   const [viewRawLog, setViewRawLog] = useState<any>(null)
@@ -112,10 +114,13 @@ export default function InvestigationDetailPage() {
     const relevantTypes = [
       'investigation_updated', 'investigation_status_changed',
       'investigation_evidence_added', 'investigation_evidence_removed',
-      'investigation_note_added', 'investigation_created'
+      'investigation_note_added', 'investigation_created',
+      'investigation_mitre_mapping_added', 'investigation_mitre_mapping_removed',
+      'mitre_mapping_created', 'mitre_mapping_deleted'
     ]
     if (relevantTypes.includes(lastMessage.type)) {
-      if (!lastMessage.data?.id || String(lastMessage.data.id) === id) {
+      const targetInvId = lastMessage.data?.investigation_id || lastMessage.data?.id
+      if (!targetInvId || String(targetInvId) === id) {
         loadData()
       }
     }
@@ -312,12 +317,21 @@ export default function InvestigationDetailPage() {
             </CardContent>
           </Card>
 
-          {/* MITRE ATT&CK Section (Phase 7E-1) */}
+          {/* MITRE ATT&CK Section (Phase 7E-1 & 7E-2) */}
           <Card>
             <CardHeader
               title={`MITRE ATT&CK Techniques${context && context.mitre && context.mitre.length > 0 ? ` (${context.mitre.length})` : ''}`}
               subtitle="Explicitly mapped adversary techniques & tactics associated with this investigation"
-            />
+            >
+              <button
+                type="button"
+                onClick={() => setShowAddMitreModal(true)}
+                className="text-xs bg-red-600 hover:bg-red-700 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors flex items-center space-x-1.5 shadow-sm"
+              >
+                <span>+</span>
+                <span>Map Technique</span>
+              </button>
+            </CardHeader>
             <CardContent>
               {context && context.mitre && context.mitre.length > 0 ? (
                 <div className="space-y-3">
@@ -325,48 +339,82 @@ export default function InvestigationDetailPage() {
                     {context.mitre.map((m: any) => (
                       <div
                         key={m.mapping_id}
-                        className="bg-[#151518] p-3.5 rounded-lg border border-gray-800 hover:border-gray-700 transition-colors"
+                        className="bg-[#151518] p-3.5 rounded-lg border border-gray-800 hover:border-gray-700 transition-colors flex flex-col justify-between"
                       >
-                        <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <div className="flex items-center space-x-2">
-                              <span className="font-mono text-xs font-bold text-red-300 bg-red-950/80 border border-red-800/60 px-2 py-0.5 rounded">
-                                {m.technique_id}
-                              </span>
-                              <span className="text-sm font-semibold text-white">
-                                {m.technique_name || m.technique_id}
-                              </span>
-                            </div>
-                            <div className="flex flex-wrap gap-1 mt-2">
-                              {m.tactics && m.tactics.map((tac: any) => (
-                                <span key={tac.tactic_id} className="text-[10px] bg-blue-950/80 border border-blue-800/60 text-blue-300 px-1.5 py-0.5 rounded">
-                                  {tac.name}
+                        <div>
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <div className="flex items-center space-x-2">
+                                <span className="font-mono text-xs font-bold text-red-300 bg-red-950/80 border border-red-800/60 px-2 py-0.5 rounded">
+                                  {m.technique_id}
                                 </span>
-                              ))}
+                                <span className="text-sm font-semibold text-white">
+                                  {m.technique_name || m.technique_id}
+                                </span>
+                              </div>
+                              <div className="flex flex-wrap gap-1 mt-2">
+                                {m.tactics && m.tactics.map((tac: any) => (
+                                  <span key={tac.tactic_id} className="text-[10px] bg-blue-950/80 border border-blue-800/60 text-blue-300 px-1.5 py-0.5 rounded">
+                                    {tac.name}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                            <div className="flex items-center space-x-1.5 shrink-0">
+                              <button
+                                onClick={async () => {
+                                  try {
+                                    const detail = await api.get<any>(`/mitre/techniques/${m.technique_id}`)
+                                    setViewMitre(detail)
+                                  } catch {
+                                    setViewMitre({
+                                      technique_id: m.technique_id,
+                                      name: m.technique_name,
+                                      description: "No details available."
+                                    })
+                                  }
+                                }}
+                                className="text-xs bg-gray-800 hover:bg-gray-700 text-blue-300 px-2 py-1 rounded transition-colors"
+                              >
+                                Details
+                              </button>
+                              {m.is_direct && (
+                                <button
+                                  title="Remove direct mapping"
+                                  onClick={async () => {
+                                    if (confirm(`Remove MITRE technique ${m.technique_id} from this investigation?`)) {
+                                      try {
+                                        await api.delete(`/mitre/mappings/${m.mapping_id}`)
+                                        loadData()
+                                      } catch (err: any) {
+                                        alert("Failed to remove mapping: " + err.message)
+                                      }
+                                    }
+                                  }}
+                                  className="text-xs bg-red-950/60 hover:bg-red-900 border border-red-800/50 text-red-300 px-2 py-1 rounded transition-colors"
+                                >
+                                  ✕
+                                </button>
+                              )}
                             </div>
                           </div>
-                          <button
-                            onClick={async () => {
-                              try {
-                                const detail = await api.get<any>(`/mitre/techniques/${m.technique_id}`)
-                                setViewMitre(detail)
-                              } catch {
-                                setViewMitre({
-                                  technique_id: m.technique_id,
-                                  name: m.technique_name,
-                                  description: "No details available."
-                                })
-                              }
-                            }}
-                            className="text-xs bg-gray-800 hover:bg-gray-700 text-blue-300 px-2 py-1 rounded transition-colors shrink-0"
-                          >
-                            Details
-                          </button>
+
+                          {m.evidence_reference && (
+                            <div className="mt-2 text-xs text-gray-400 bg-[#101014] px-2 py-1 rounded border border-gray-800/50">
+                              <span className="text-gray-500 font-semibold mr-1">Evidence:</span>
+                              <span>{m.evidence_reference}</span>
+                            </div>
+                          )}
                         </div>
 
                         <div className="mt-3 pt-2 border-t border-gray-800/60 flex items-center justify-between text-xs text-gray-500">
                           <span className="truncate">
                             Source: <span className="text-gray-300 font-medium">{m.source}</span>
+                            {m.is_direct ? (
+                              <span className="ml-1 text-[10px] text-emerald-400 font-semibold">(Direct)</span>
+                            ) : (
+                              <span className="ml-1 text-[10px] text-blue-400 font-semibold">(Inherited)</span>
+                            )}
                           </span>
                           <span className="shrink-0 ml-2">
                             Confidence: <span className={m.confidence === 'HIGH' ? 'text-emerald-400 font-medium' : m.confidence === 'MEDIUM' ? 'text-yellow-400 font-medium' : 'text-gray-400'}>{m.confidence}</span>
@@ -800,6 +848,13 @@ export default function InvestigationDetailPage() {
       {viewAlert && <AlertDetailsModal alert={viewAlert} onClose={() => setViewAlert(null)} />}
       {viewRawLog && <RawLogDetailsModal log={viewRawLog} onClose={() => setViewRawLog(null)} />}
       {viewMitre && <MitreTechniqueDetailsModal technique={viewMitre} onClose={() => setViewMitre(null)} />}
+      {showAddMitreModal && (
+        <AddMitreMappingModal
+          investigationId={id}
+          onClose={() => setShowAddMitreModal(false)}
+          onSuccess={() => loadData()}
+        />
+      )}
     </div>
   )
 }

@@ -463,9 +463,10 @@ async def get_investigation_context(id: int, db: AsyncSession = Depends(get_db))
         })
         seen_techs.add(t.technique_id)
 
-    # 2. Inherited from attached alerts
+    # 2. Inherited from attached alerts and their detection rules
     if alert_ids:
         alert_str_ids = [str(aid) for aid in alert_ids]
+        # Direct alert mappings
         al_mitre_stmt = (
             select(MitreMappingModel, MitreTechniqueModel)
             .join(MitreTechniqueModel, MitreMappingModel.technique_id == MitreTechniqueModel.technique_id)
@@ -495,6 +496,44 @@ async def get_investigation_context(id: int, db: AsyncSession = Depends(get_db))
                     "is_direct": False
                 })
                 seen_techs.add(t.technique_id)
+
+        # Inherited from Detection Rules of attached alerts
+        al_objs_res = await db.execute(select(AlertModel).where(AlertModel.id.in_(alert_ids)))
+        rule_ids_to_check = set()
+        for a_obj in al_objs_res.scalars().all():
+            if a_obj.rule_id:
+                rule_ids_to_check.add(str(a_obj.rule_id))
+
+        if rule_ids_to_check:
+            rule_mitre_stmt = (
+                select(MitreMappingModel, MitreTechniqueModel)
+                .join(MitreTechniqueModel, MitreMappingModel.technique_id == MitreTechniqueModel.technique_id)
+                .options(
+                    selectinload(MitreTechniqueModel.tactics).selectinload(MitreTechniqueTacticModel.tactic)
+                )
+                .where(
+                    MitreMappingModel.target_type == "DETECTION_RULE",
+                    MitreMappingModel.target_id.in_(list(rule_ids_to_check))
+                )
+            )
+            rule_mitre_res = await db.execute(rule_mitre_stmt)
+            for m, t in rule_mitre_res.all():
+                if t.technique_id not in seen_techs:
+                    tactics = [
+                        {"tactic_id": tt.tactic.tactic_id, "name": tt.tactic.name}
+                        for tt in t.tactics if tt.tactic
+                    ]
+                    context["mitre"].append({
+                        "mapping_id": m.id,
+                        "technique_id": t.technique_id,
+                        "technique_name": t.name,
+                        "tactics": tactics,
+                        "source": m.mapping_source,
+                        "confidence": m.confidence,
+                        "evidence_reference": m.evidence_reference or f"Rule #{m.target_id} (via Alert)",
+                        "is_direct": False
+                    })
+                    seen_techs.add(t.technique_id)
 
     return context
 

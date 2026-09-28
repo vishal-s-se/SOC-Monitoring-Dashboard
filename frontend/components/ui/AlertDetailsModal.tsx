@@ -3,6 +3,7 @@ import Link from "next/link"
 import { SeverityBadge } from "./SeverityBadge"
 import { StatusBadge } from "./StatusBadge"
 import { AddToInvestigationModal } from "./AddToInvestigationModal"
+import { MitreTechniqueDetailsModal } from "./MitreTechniqueDetailsModal"
 import { api } from "@/lib/api"
 
 interface Props {
@@ -13,6 +14,7 @@ interface Props {
 export function AlertDetailsModal({ alert, onClose }: Props) {
   const [showInvestigateModal, setShowInvestigateModal] = useState(false)
   const [mitreMappings, setMitreMappings] = useState<any[]>([])
+  const [viewMitre, setViewMitre] = useState<any>(null)
 
   useEffect(() => {
     if (!alert) return
@@ -21,7 +23,8 @@ export function AlertDetailsModal({ alert, onClose }: Props) {
         const idToSearch = alert.alert_id || String(alert.id)
         const mappings = await api.get<any[]>('/mitre/mappings', {
           target_type: 'ALERT',
-          target_id: idToSearch
+          target_id: idToSearch,
+          include_inherited: true
         })
         setMitreMappings(mappings || [])
       } catch {
@@ -126,7 +129,7 @@ export function AlertDetailsModal({ alert, onClose }: Props) {
               </h4>
               <div className="space-y-2">
                 {mitreMappings.map(m => (
-                  <div key={m.id} className="p-3 bg-[#151922] border border-gray-800 rounded-lg flex items-center justify-between">
+                  <div key={`${m.id}-${m.technique_id}`} className="p-3 bg-[#151922] border border-gray-800 rounded-lg flex items-center justify-between">
                     <div>
                       <span className="font-mono text-xs font-bold text-red-300 bg-red-950/80 border border-red-800/60 px-2 py-0.5 rounded mr-2">
                         {m.technique_id}
@@ -137,6 +140,15 @@ export function AlertDetailsModal({ alert, onClose }: Props) {
                           ({m.tactics.map((t: any) => t.name).join(', ')})
                         </span>
                       )}
+                      {m.is_inherited ? (
+                        <span className="ml-2 text-[10px] text-blue-400 bg-blue-950/60 border border-blue-800/40 px-1.5 py-0.5 rounded font-medium">
+                          Inherited from Rule
+                        </span>
+                      ) : (
+                        <span className="ml-2 text-[10px] text-emerald-400 bg-emerald-950/60 border border-emerald-800/40 px-1.5 py-0.5 rounded font-medium">
+                          Direct
+                        </span>
+                      )}
                     </div>
                     <div className="flex items-center space-x-3 text-xs">
                       <span className="text-gray-400">
@@ -145,6 +157,24 @@ export function AlertDetailsModal({ alert, onClose }: Props) {
                       <span className="text-gray-500">
                         Confidence: <span className="text-gray-300">{m.confidence}</span>
                       </span>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            const detail = await api.get<any>(`/mitre/techniques/${m.technique_id}`)
+                            setViewMitre(detail)
+                          } catch {
+                            setViewMitre({
+                              technique_id: m.technique_id,
+                              name: m.technique_name,
+                              description: "No details available."
+                            })
+                          }
+                        }}
+                        className="text-xs bg-gray-800 hover:bg-gray-700 text-blue-300 px-2 py-1 rounded transition-colors"
+                      >
+                        Details
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -172,6 +202,13 @@ export function AlertDetailsModal({ alert, onClose }: Props) {
           referenceId={String(alert.id)}
           defaultTitle={`Investigation: ${alert.title}`}
           onClose={() => setShowInvestigateModal(false)}
+        />
+      )}
+
+      {viewMitre && (
+        <MitreTechniqueDetailsModal
+          technique={viewMitre}
+          onClose={() => setViewMitre(null)}
         />
       )}
     </div>
