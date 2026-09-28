@@ -243,4 +243,157 @@ class BehavioralAnalyticsEngine:
             
         return None
 
+
+    async def correlate_deviation(self, db: AsyncSession, deviation: BehaviorDeviation):
+        """
+        Deterministically correlate a behavioral deviation with other entities (alerts, users, investigations).
+        """
+        from backend.app.models.analytics import BehaviorCorrelation
+        from backend.app.models.alert import Alert
+        from backend.app.models.investigation import InvestigationEvidence
+        from sqlalchemy.orm import selectinload
+        
+        # Load evidence
+        stmt = select(BehaviorDeviation).options(selectinload(BehaviorDeviation.evidence)).where(BehaviorDeviation.id == deviation.id)
+        result = await db.execute(stmt)
+        dev = result.scalars().first()
+        if not dev:
+            return
+            
+        now = datetime.now(timezone.utc)
+        created_correlations = []
+        
+        # 1. Temporal Alert Correlation (±15 minutes)
+        # For simplicity, we just look back 15 mins and forward 15 mins from deviation.observation_timestamp
+        window_start = dev.observation_timestamp - timedelta(minutes=15)
+        window_end = dev.observation_timestamp + timedelta(minutes=15)
+        
+        alert_stmt = select(Alert).where(Alert.timestamp >= window_start, Alert.timestamp <= window_end)
+        # entity filter
+        if dev.entity_type == "HOST":
+            alert_stmt = alert_stmt.where(Alert.hostname == dev.entity_id)
+        elif dev.entity_type == "USER":
+            alert_stmt = alert_stmt.where(Alert.username == dev.entity_id)
+        elif dev.entity_type == "IP":
+            alert_stmt = alert_stmt.where((Alert.source_ip == dev.entity_id) | (Alert.destination_ip == dev.entity_id))
+            
+        alerts_result = await db.execute(alert_stmt)
+        alerts = alerts_result.scalars().all()
+        
+        for al in alerts:
+            # check if correlation already exists
+            existing = await db.execute(select(BehaviorCorrelation).where(
+                BehaviorCorrelation.deviation_id == dev.id,
+                BehaviorCorrelation.related_entity_type == "ALERT",
+                BehaviorCorrelation.related_entity_id == str(al.id)
+            ))
+            if not existing.scalars().first():
+                bc = BehaviorCorrelation(
+                    deviation_id=dev.id,
+                    related_entity_type="ALERT",
+                    related_entity_id=str(al.id),
+                    relationship_type="TEMPORAL",
+                    relationship_reason="Alert occurred within 15 minutes on the same entity",
+                    time_difference_seconds=int((al.timestamp - dev.observation_timestamp).total_seconds())
+                )
+                db.add(bc)
+                created_correlations.append(bc)
+                
+        # 2. Shared Evidence / Investigation Correlation
+        event_ids = [e.reference_id for e in dev.evidence if e.evidence_type == "EVENT"]
+        if event_ids:
+            # Find investigations containing these events
+            inv_stmt = select(InvestigationEvidence).where(
+                InvestigationEvidence.evidence_type == "EVENT",
+                InvestigationEvidence.evidence_id.in_(event_ids)
+            )
+            inv_result = await db.execute(inv_stmt)
+            inv_evidences = inv_result.scalars().all()
+            
+            seen_invs = set()
+            for ie in inv_evidences:
+                if ie.investigation_id in seen_invs:
+                    continue
+                seen_invs.add(ie.investigation_id)
+                
+                existing = await db.execute(select(BehaviorCorrelation).where(
+                    BehaviorCorrelation.deviation_id == dev.id,
+                    BehaviorCorrelation.related_entity_type == "INVESTIGATION",
+                    BehaviorCorrelation.related_entity_id == str(ie.investigation_id)
+                ))
+                if not existing.scalars().first():
+                    bc = BehaviorCorrelation(
+                        deviation_id=dev.id,
+                        related_entity_type="INVESTIGATION",
+                        related_entity_id=str(ie.investigation_id),
+                        relationship_type="SHARED_ENTITY",
+                        relationship_reason="Deviation evidence is part of this investigation"
+                    )
+                    db.add(bc)
+                    created_correlations.append(bc)
+                    
+            # 3. Entity Expansion from Events
+            ev_stmt = select(Event).where(Event.id.in_([int(eid) for eid in event_ids]))
+            ev_result = await db.execute(ev_stmt)
+            events = ev_result.scalars().all()
+            
+            seen_hosts = set()
+            seen_users = set()
+            seen_ips = set()
+            
+            for e in events:
+                if e.hostname and e.hostname != dev.entity_id:
+                    seen_hosts.add(e.hostname)
+                if e.username and e.username != dev.entity_id:
+                    seen_users.add(e.username)
+                if e.source_ip and e.source_ip != dev.entity_id:
+                    seen_ips.add(e.source_ip)
+            
+            for host in seen_hosts:
+                existing = await db.execute(select(BehaviorCorrelation).where(
+                    BehaviorCorrelation.deviation_id == dev.id,
+                    BehaviorCorrelation.related_entity_type == "HOST",
+                    BehaviorCorrelation.related_entity_id == host
+                ))
+                if not existing.scalars().first():
+                    bc = BehaviorCorrelation(
+                        deviation_id=dev.id,
+                        related_entity_type="HOST",
+                        related_entity_id=host,
+                        relationship_type="EXPLICIT",
+                        relationship_reason="Host explicitly referenced in deviation events"
+                    )
+                    db.add(bc)
+                    created_correlations.append(bc)
+                    
+            for user in seen_users:
+                existing = await db.execute(select(BehaviorCorrelation).where(
+                    BehaviorCorrelation.deviation_id == dev.id,
+                    BehaviorCorrelation.related_entity_type == "USER",
+                    BehaviorCorrelation.related_entity_id == user
+                ))
+                if not existing.scalars().first():
+                    bc = BehaviorCorrelation(
+                        deviation_id=dev.id,
+                        related_entity_type="USER",
+                        related_entity_id=user,
+                        relationship_type="EXPLICIT",
+                        relationship_reason="User explicitly referenced in deviation events"
+                    )
+                    db.add(bc)
+                    created_correlations.append(bc)
+                    
+        if created_correlations:
+            await db.commit()
+            for bc in created_correlations:
+                event_bus.publish("behavior_correlation_created", {
+                    "id": bc.id,
+                    "deviation_id": bc.deviation_id,
+                    "related_entity_type": bc.related_entity_type,
+                    "related_entity_id": bc.related_entity_id
+                })
+        
+        return created_correlations
+
 analytics_engine = BehavioralAnalyticsEngine()
+

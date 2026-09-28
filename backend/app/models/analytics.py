@@ -52,3 +52,19 @@ class BehaviorDeviationEvidence(Base):
     reference_id = Column(String, nullable=False)
 
     deviation = relationship("BehaviorDeviation", back_populates="evidence")
+
+class BehaviorCorrelation(Base):
+    __tablename__ = "behavior_correlation"
+
+    id = Column(Integer, primary_key=True, index=True)
+    deviation_id = Column(Integer, ForeignKey("behavior_deviation.id"), nullable=False, index=True)
+    related_entity_type = Column(String, nullable=False, index=True) # "USER", "HOST", "IP", "ALERT", "INVESTIGATION"
+    related_entity_id = Column(String, nullable=False, index=True)
+    relationship_type = Column(String, nullable=False, index=True)   # "SHARED_ENTITY", "TEMPORAL", "EXPLICIT"
+    relationship_reason = Column(String, nullable=False)             # e.g. "Same source IP", "Occurred within 15m"
+    time_difference_seconds = Column(Integer, nullable=True)         # if temporal
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    deviation = relationship("BehaviorDeviation", backref="correlations")
+

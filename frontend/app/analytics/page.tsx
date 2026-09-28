@@ -23,6 +23,7 @@ export default function AnalyticsPage() {
   const [pageSize] = useState(15)
 
   const [viewEvent, setViewEvent] = useState<any>(null)
+  const [expandedDeviations, setExpandedDeviations] = useState<Record<number, any[]>>({})
 
   const { lastMessage } = useWebSocket()
 
@@ -183,9 +184,49 @@ export default function AnalyticsPage() {
                                 View Evidence Event
                               </button>
                             ))}
+                            <button
+                                onClick={async () => {
+                                  if (expandedDeviations[dev.id]) {
+                                    const next = { ...expandedDeviations };
+                                    delete next[dev.id];
+                                    setExpandedDeviations(next);
+                                  } else {
+                                    try {
+                                      const cors = await api.get<any[]>(`/analytics/deviations/${dev.id}/correlations`);
+                                      setExpandedDeviations({ ...expandedDeviations, [dev.id]: cors || [] });
+                                    } catch (err) {}
+                                  }
+                                }}
+                                className="text-[11px] bg-purple-900/30 hover:bg-purple-900/50 text-purple-300 border border-purple-800/50 px-2 py-1 rounded"
+                              >
+                                {expandedDeviations[dev.id] ? 'Hide Relationships' : 'View Relationships'}
+                              </button>
                           </div>
                         )}
                       </div>
+                      
+                      {expandedDeviations[dev.id] && (
+                        <div className="mt-3 pt-3 border-t border-gray-800 text-xs">
+                          <h4 className="text-gray-400 font-semibold mb-2">Cross-Entity Correlations</h4>
+                          {expandedDeviations[dev.id].length === 0 ? (
+                            <div className="text-gray-500 italic">No correlated entities found.</div>
+                          ) : (
+                            <div className="space-y-2">
+                              {expandedDeviations[dev.id].map((cor: any) => (
+                                <div key={cor.id} className="flex items-center gap-3 bg-[#111115] p-2 rounded border border-gray-800">
+                                  <span className="bg-gray-800 text-gray-300 px-1.5 py-0.5 rounded text-[10px] uppercase font-bold">{cor.relationship_type}</span>
+                                  <span className="text-purple-400 font-medium w-16">{cor.related_entity_type}</span>
+                                  <Link href={getEntityLink(cor.related_entity_type, cor.related_entity_id)} className="text-blue-400 hover:underline font-mono">
+                                    {cor.related_entity_id}
+                                  </Link>
+                                  <span className="text-gray-500 flex-1">{cor.relationship_reason}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      
                     </div>
                   ))}
                 </div>

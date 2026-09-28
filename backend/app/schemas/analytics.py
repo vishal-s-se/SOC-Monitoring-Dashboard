@@ -56,3 +56,17 @@ class BehaviorDeviationResponse(BehaviorDeviationBase):
 
     class Config:
         from_attributes = True
+
+class BehaviorCorrelationResponse(BaseModel):
+    id: int
+    deviation_id: int
+    related_entity_type: str
+    related_entity_id: str
+    relationship_type: str
+    relationship_reason: str
+    time_difference_seconds: Optional[int]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+

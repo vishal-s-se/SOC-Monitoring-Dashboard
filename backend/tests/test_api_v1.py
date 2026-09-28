@@ -2368,4 +2368,59 @@ async def test_behavioral_analytics_phase_8a(client: AsyncClient, db: AsyncSessi
     assert res_b_id.status_code == 200
     assert res_b_id.json()["id"] == baseline.id
 
+@pytest.mark.asyncio
+async def test_cross_entity_correlation_phase_8b(client: AsyncClient, db: AsyncSession):
+    from backend.app.models.analytics import BehaviorBaseline, BehaviorDeviation, BehaviorDeviationEvidence, BehaviorCorrelation
+    
+    baseline = BehaviorBaseline(
+        entity_type="HOST",
+        entity_id="server-999",
+        metric_name="daily_event_volume",
+        time_window="1d",
+        expected_value=10.0,
+        variance=2.0,
+        sample_count=15
+    )
+    db.add(baseline)
+    await db.flush()
+
+    dev = BehaviorDeviation(
+        baseline_id=baseline.id,
+        entity_type="HOST",
+        entity_id="server-999",
+        metric_name="daily_event_volume",
+        observed_value=100.0,
+        expected_value=10.0,
+        deviation_magnitude=45.0,
+        observation_timestamp=datetime.now(timezone.utc),
+        explanation="High activity"
+    )
+    db.add(dev)
+    await db.flush()
+
+    # Create correlation
+    cor = BehaviorCorrelation(
+        deviation_id=dev.id,
+        related_entity_type="USER",
+        related_entity_id="admin-999",
+        relationship_type="EXPLICIT",
+        relationship_reason="User executed commands during deviation"
+    )
+    db.add(cor)
+    await db.commit()
+
+    # 1. GET /deviations/{id}/correlations
+    res = await client.get(f"/api/v1/analytics/deviations/{dev.id}/correlations")
+    assert res.status_code == 200
+    data = res.json()
+    assert len(data) == 1
+    assert data[0]["related_entity_id"] == "admin-999"
+
+    # 2. GET /correlations
+    res2 = await client.get(f"/api/v1/analytics/correlations?related_entity_type=USER&related_entity_id=admin-999")
+    assert res2.status_code == 200
+    data2 = res2.json()
+    assert len(data2) >= 1
+    assert data2[0]["relationship_reason"] == "User executed commands during deviation"
+
 
