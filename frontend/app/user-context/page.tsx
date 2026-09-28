@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import { useEffect, useState, useCallback, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
@@ -25,6 +25,7 @@ function UserContextContent() {
   const [activeUser, setActiveUser] = useState(userParam)
 
   const [overview, setOverview] = useState<any | null>(null)
+  const [deviations, setDeviations] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 

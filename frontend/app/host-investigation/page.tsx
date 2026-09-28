@@ -32,6 +32,7 @@ function HostInvestigationContent() {
 
   // Data states
   const [overview, setOverview] = useState<any | null>(null)
+  const [deviations, setDeviations] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -115,6 +116,14 @@ function HostInvestigationContent() {
       if (bounds.end) query.end_time = bounds.end
 
       const res = await api.get<any>(`/host-investigation/${encodeURIComponent(targetHost.trim())}`, query)
+      
+      try {
+        const devRes = await api.get<any[]>(`/analytics/deviations?entity_type=HOST&entity_id=${encodeURIComponent(targetHost.trim())}&limit=5`)
+        setDeviations(devRes || [])
+      } catch (e) {
+        setDeviations([])
+      }
+
       setOverview(res)
     } catch (err: any) {
       setError(err.message || 'Failed to load Host investigation')

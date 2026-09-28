@@ -15,6 +15,7 @@ const NAV_ITEMS = [
   { name: 'Processes', href: '/processes' },
   { name: 'Alerts', href: '/alerts' },
   { name: 'Investigations', href: '/investigations' },
+  { name: 'Behavioral Analytics', href: '/analytics' },
   { name: 'Attack Timeline', href: '/attack-timeline' },
   { name: 'IP Investigation', href: '/ip-investigation' },
   { name: 'Host Investigation', href: '/host-investigation' },

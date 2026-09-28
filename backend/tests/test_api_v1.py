@@ -2305,3 +2305,67 @@ async def test_investigation_intelligence_phase_7f4(client: AsyncClient, db: Asy
     res_404 = await client.get("/api/v1/investigations/999999/intelligence")
     assert res_404.status_code == 404
 
+
+@pytest.mark.asyncio
+async def test_behavioral_analytics_phase_8a(client: AsyncClient, db: AsyncSession):
+    from backend.app.models.analytics import BehaviorBaseline, BehaviorDeviation, BehaviorDeviationEvidence
+    
+    # 1. Create a baseline
+    baseline = BehaviorBaseline(
+        entity_type="HOST",
+        entity_id="server-123",
+        metric_name="daily_event_volume",
+        time_window="1d",
+        expected_value=100.0,
+        variance=15.0,
+        sample_count=30
+    )
+    db.add(baseline)
+    await db.flush()
+
+    # 2. Create a deviation
+    now = datetime.now(timezone.utc)
+    deviation = BehaviorDeviation(
+        baseline_id=baseline.id,
+        entity_type="HOST",
+        entity_id="server-123",
+        metric_name="daily_event_volume",
+        observed_value=500.0,
+        expected_value=100.0,
+        deviation_magnitude=26.6,
+        observation_timestamp=now,
+        explanation="Observed 500 events, normal is 100."
+    )
+    db.add(deviation)
+    await db.flush()
+
+    ev = BehaviorDeviationEvidence(
+        deviation_id=deviation.id,
+        evidence_type="EVENT",
+        reference_id="test-event-id"
+    )
+    db.add(ev)
+    await db.commit()
+
+    # 3. Test baselines API
+    res_base = await client.get("/api/v1/analytics/baselines")
+    assert res_base.status_code == 200
+    data_base = res_base.json()
+    assert len(data_base) >= 1
+    assert any(b["entity_id"] == "server-123" for b in data_base)
+
+    # 4. Test deviation API
+    res_dev = await client.get("/api/v1/analytics/deviations?entity_type=HOST&entity_id=server-123")
+    assert res_dev.status_code == 200
+    data_dev = res_dev.json()
+    assert len(data_dev) == 1
+    assert data_dev[0]["entity_id"] == "server-123"
+    assert len(data_dev[0]["evidence"]) == 1
+    assert data_dev[0]["evidence"][0]["reference_id"] == "test-event-id"
+
+    # 5. Test get baseline by id
+    res_b_id = await client.get(f"/api/v1/analytics/baselines/{baseline.id}")
+    assert res_b_id.status_code == 200
+    assert res_b_id.json()["id"] == baseline.id
+
+
