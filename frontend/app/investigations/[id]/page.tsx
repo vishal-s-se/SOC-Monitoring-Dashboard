@@ -45,6 +45,12 @@ export default function InvestigationDetailPage() {
   const [assignee, setAssignee] = useState("")
 
   const [showAddMitreModal, setShowAddMitreModal] = useState(false)
+  const [mitreSourceFilter, setMitreSourceFilter] = useState<string>("ALL")
+  const [mitreConfidenceFilter, setMitreConfidenceFilter] = useState<string>("ALL")
+  const [mitreSearch, setMitreSearch] = useState<string>("")
+  const [mitreGroupByTactic, setMitreGroupByTactic] = useState<boolean>(true)
+  const [expandedMitreMappings, setExpandedMitreMappings] = useState<Set<number>>(new Set())
+
   const [viewEvent, setViewEvent] = useState<any>(null)
   const [viewAlert, setViewAlert] = useState<any>(null)
   const [viewRawLog, setViewRawLog] = useState<any>(null)
@@ -263,21 +269,58 @@ export default function InvestigationDetailPage() {
       </div>
 
       {evidenceSummary && (
-        <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-7 gap-3">
-          {[
-            { label: 'Alerts', value: evidenceSummary.alerts, color: 'text-red-400' },
-            { label: 'Events', value: evidenceSummary.events, color: 'text-blue-400' },
-            { label: 'Raw Logs', value: evidenceSummary.raw_logs, color: 'text-yellow-400' },
-            { label: 'Hosts', value: evidenceSummary.hosts, color: 'text-green-400' },
-            { label: 'Agents', value: evidenceSummary.agents, color: 'text-purple-400' },
-            { label: 'Notes', value: evidenceSummary.notes, color: 'text-gray-300' },
-            { label: 'Total Evidence', value: evidenceSummary.total_evidence, color: 'text-white' },
-          ].map(item => (
-            <div key={item.label} className="bg-[#1e1e24] border border-gray-800 rounded-lg p-3 text-center">
-              <div className={`text-2xl font-bold ${item.color}`}>{item.value}</div>
-              <div className="text-xs text-gray-500 mt-1">{item.label}</div>
-            </div>
-          ))}
+        <div className="space-y-3">
+          <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+            {[
+              { label: 'Alerts', value: evidenceSummary.alerts, color: 'text-red-400' },
+              { label: 'Events', value: evidenceSummary.events, color: 'text-blue-400' },
+              { label: 'Raw Logs', value: evidenceSummary.raw_logs, color: 'text-yellow-400' },
+              { label: 'Hosts', value: evidenceSummary.hosts, color: 'text-green-400' },
+              { label: 'Agents', value: evidenceSummary.agents, color: 'text-purple-400' },
+              { label: 'Notes', value: evidenceSummary.notes, color: 'text-gray-300' },
+              { label: 'Total Evidence', value: evidenceSummary.total_evidence, color: 'text-white' },
+            ].map(item => (
+              <div key={item.label} className="bg-[#1e1e24] border border-gray-800 rounded-lg p-3 text-center">
+                <div className={`text-2xl font-bold ${item.color}`}>{item.value}</div>
+                <div className="text-xs text-gray-500 mt-1">{item.label}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* MITRE Summary Metrics */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {[
+              { label: 'MITRE Techniques', value: evidenceSummary.mitre_techniques || (context?.mitre?.length ?? 0), color: 'text-red-400', badge: 'Techniques' },
+              {
+                label: 'MITRE Tactics',
+                value: evidenceSummary.mitre_tactics || (context?.mitre ? new Set(context.mitre.flatMap((m: any) => (m.tactics || []).map((t: any) => t.tactic_id))).size : 0),
+                color: 'text-blue-400',
+                badge: 'Tactics'
+              },
+              {
+                label: 'Analyst Confirmed',
+                value: evidenceSummary.analyst_confirmed || (context?.mitre ? context.mitre.filter((m: any) => m.source === 'ANALYST_CONFIRMED').length : 0),
+                color: 'text-emerald-400',
+                badge: 'Direct'
+              },
+              {
+                label: 'Documented Rules',
+                value: evidenceSummary.documented_rules || (context?.mitre ? context.mitre.filter((m: any) => m.source === 'DOCUMENTED_RULE').length : 0),
+                color: 'text-yellow-400',
+                badge: 'Rule Derived'
+              },
+            ].map(item => (
+              <div key={item.label} className="bg-[#181820] border border-gray-800/80 rounded-lg p-2.5 flex items-center justify-between">
+                <div>
+                  <div className="text-xs text-gray-400 font-medium">{item.label}</div>
+                  <div className={`text-xl font-bold ${item.color} mt-0.5`}>{item.value}</div>
+                </div>
+                <span className="text-[10px] uppercase font-semibold text-gray-500 bg-gray-900 border border-gray-800 px-1.5 py-0.5 rounded">
+                  {item.badge}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -317,11 +360,11 @@ export default function InvestigationDetailPage() {
             </CardContent>
           </Card>
 
-          {/* MITRE ATT&CK Section (Phase 7E-1 & 7E-2) */}
+          {/* MITRE ATT&CK Investigation View (Phase 7E-1, 7E-2, 7E-3) */}
           <Card>
             <CardHeader
-              title={`MITRE ATT&CK Techniques${context && context.mitre && context.mitre.length > 0 ? ` (${context.mitre.length})` : ''}`}
-              subtitle="Explicitly mapped adversary techniques & tactics associated with this investigation"
+              title={`MITRE ATT&CK Investigation View${context && context.mitre && context.mitre.length > 0 ? ` (${context.mitre.length})` : ''}`}
+              subtitle="Adversary techniques & tactics associated with this investigation with clear provenance"
             >
               <button
                 type="button"
@@ -332,26 +375,129 @@ export default function InvestigationDetailPage() {
                 <span>Map Technique</span>
               </button>
             </CardHeader>
+
+            {/* Filter & Control Bar */}
+            <div className="px-6 py-3 bg-[#15151b] border-b border-gray-800 text-xs flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-2.5">
+                {/* Search */}
+                <input
+                  type="text"
+                  placeholder="Filter technique or tactic..."
+                  value={mitreSearch}
+                  onChange={(e) => setMitreSearch(e.target.value)}
+                  className="bg-[#101014] border border-gray-800 rounded px-2.5 py-1 text-white text-xs placeholder-gray-500 focus:outline-none focus:border-red-500"
+                />
+
+                {/* Source Filter */}
+                <div className="flex items-center space-x-1.5">
+                  <span className="text-gray-500">Source:</span>
+                  <select
+                    value={mitreSourceFilter}
+                    onChange={(e) => setMitreSourceFilter(e.target.value)}
+                    className="bg-[#101014] border border-gray-800 rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-red-500"
+                  >
+                    <option value="ALL">All Sources</option>
+                    <option value="ANALYST_CONFIRMED">Analyst Confirmed</option>
+                    <option value="DOCUMENTED_RULE">Documented Rule</option>
+                    <option value="SYSTEM_DEFINED">System Defined</option>
+                    <option value="IMPORTED">Imported</option>
+                  </select>
+                </div>
+
+                {/* Confidence Filter */}
+                <div className="flex items-center space-x-1.5">
+                  <span className="text-gray-500">Confidence:</span>
+                  <select
+                    value={mitreConfidenceFilter}
+                    onChange={(e) => setMitreConfidenceFilter(e.target.value)}
+                    className="bg-[#101014] border border-gray-800 rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-red-500"
+                  >
+                    <option value="ALL">All Levels</option>
+                    <option value="HIGH">High</option>
+                    <option value="MEDIUM">Medium</option>
+                    <option value="LOW">Low</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Grouping Toggle */}
+              <div className="flex items-center space-x-2">
+                <span className="text-gray-500">Group:</span>
+                <button
+                  type="button"
+                  onClick={() => setMitreGroupByTactic(!mitreGroupByTactic)}
+                  className={`px-2 py-1 rounded text-xs border transition-colors ${
+                    mitreGroupByTactic
+                      ? 'bg-blue-950/80 border-blue-700 text-blue-300 font-semibold'
+                      : 'bg-gray-800 border-gray-700 text-gray-400 hover:text-white'
+                  }`}
+                >
+                  {mitreGroupByTactic ? 'By Tactic' : 'Flat List'}
+                </button>
+              </div>
+            </div>
+
             <CardContent>
-              {context && context.mitre && context.mitre.length > 0 ? (
-                <div className="space-y-3">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {context.mitre.map((m: any) => (
-                      <div
-                        key={m.mapping_id}
-                        className="bg-[#151518] p-3.5 rounded-lg border border-gray-800 hover:border-gray-700 transition-colors flex flex-col justify-between"
-                      >
+              {(() => {
+                const allMitre: any[] = (context && context.mitre) || []
+                const filtered = allMitre.filter((m: any) => {
+                  if (mitreSourceFilter !== 'ALL' && m.source !== mitreSourceFilter) return false
+                  if (mitreConfidenceFilter !== 'ALL' && m.confidence !== mitreConfidenceFilter) return false
+                  if (mitreSearch.trim()) {
+                    const q = mitreSearch.toLowerCase().trim()
+                    const matchTid = m.technique_id.toLowerCase().includes(q)
+                    const matchName = (m.technique_name || '').toLowerCase().includes(q)
+                    const matchTactic = (m.tactics || []).some((t: any) => t.name.toLowerCase().includes(q) || t.tactic_id.toLowerCase().includes(q))
+                    if (!matchTid && !matchName && !matchTactic) return false
+                  }
+                  return true
+                })
+
+                if (filtered.length === 0) {
+                  return (
+                    <div className="text-center py-8 text-gray-500 text-sm">
+                      <p className="font-semibold text-gray-400">No MITRE ATT&CK mappings match the selected criteria.</p>
+                      <p className="text-xs text-gray-600 mt-1">
+                        Techniques appear when explicitly mapped by an analyst or inherited via configured detection rules and alerts.
+                      </p>
+                    </div>
+                  )
+                }
+
+                // Render helper for an individual mapping card
+                const renderMappingCard = (m: any) => {
+                  const isExpanded = expandedMitreMappings.has(m.mapping_id)
+                  const toggleExpand = () => {
+                    const next = new Set(expandedMitreMappings)
+                    if (isExpanded) next.delete(m.mapping_id)
+                    else next.add(m.mapping_id)
+                    setExpandedMitreMappings(next)
+                  }
+
+                  return (
+                    <div
+                      key={m.mapping_id}
+                      className="bg-[#151518] rounded-lg border border-gray-800 hover:border-gray-700 transition-colors overflow-hidden"
+                    >
+                      <div className="p-4 flex flex-col justify-between">
                         <div>
                           <div className="flex items-start justify-between gap-2">
-                            <div>
-                              <div className="flex items-center space-x-2">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center flex-wrap gap-2">
                                 <span className="font-mono text-xs font-bold text-red-300 bg-red-950/80 border border-red-800/60 px-2 py-0.5 rounded">
                                   {m.technique_id}
                                 </span>
-                                <span className="text-sm font-semibold text-white">
+                                <span className="text-sm font-semibold text-white truncate">
                                   {m.technique_name || m.technique_id}
                                 </span>
+                                {m.is_subtechnique && (
+                                  <span className="text-[10px] bg-gray-800 text-gray-300 px-1.5 py-0.5 rounded border border-gray-700">
+                                    Sub-technique
+                                  </span>
+                                )}
                               </div>
+
+                              {/* Tactics badges */}
                               <div className="flex flex-wrap gap-1 mt-2">
                                 {m.tactics && m.tactics.map((tac: any) => (
                                   <span key={tac.tactic_id} className="text-[10px] bg-blue-950/80 border border-blue-800/60 text-blue-300 px-1.5 py-0.5 rounded">
@@ -360,6 +506,8 @@ export default function InvestigationDetailPage() {
                                 ))}
                               </div>
                             </div>
+
+                            {/* Actions */}
                             <div className="flex items-center space-x-1.5 shrink-0">
                               <button
                                 onClick={async () => {
@@ -370,19 +518,26 @@ export default function InvestigationDetailPage() {
                                     setViewMitre({
                                       technique_id: m.technique_id,
                                       name: m.technique_name,
-                                      description: "No details available."
+                                      description: m.description || "No details available."
                                     })
                                   }
                                 }}
-                                className="text-xs bg-gray-800 hover:bg-gray-700 text-blue-300 px-2 py-1 rounded transition-colors"
+                                className="text-xs bg-gray-800 hover:bg-gray-700 text-blue-300 px-2.5 py-1 rounded transition-colors"
                               >
-                                Details
+                                Technique Catalog
+                              </button>
+                              <button
+                                onClick={toggleExpand}
+                                className="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 px-2 py-1 rounded transition-colors"
+                                title="Expand details and evidence"
+                              >
+                                {isExpanded ? '▲' : '▼'}
                               </button>
                               {m.is_direct && (
                                 <button
-                                  title="Remove direct mapping"
+                                  title="Remove explicit investigation mapping"
                                   onClick={async () => {
-                                    if (confirm(`Remove MITRE technique ${m.technique_id} from this investigation?`)) {
+                                    if (confirm(`Remove explicit mapping of MITRE technique ${m.technique_id}?`)) {
                                       try {
                                         await api.delete(`/mitre/mappings/${m.mapping_id}`)
                                         loadData()
@@ -399,37 +554,163 @@ export default function InvestigationDetailPage() {
                             </div>
                           </div>
 
-                          {m.evidence_reference && (
-                            <div className="mt-2 text-xs text-gray-400 bg-[#101014] px-2 py-1 rounded border border-gray-800/50">
-                              <span className="text-gray-500 font-semibold mr-1">Evidence:</span>
-                              <span>{m.evidence_reference}</span>
-                            </div>
-                          )}
+                          {/* Relationship and Provenance Pill */}
+                          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+                            <span className="font-semibold text-gray-400">Provenance:</span>
+                            <span className={`px-2 py-0.5 rounded border text-[11px] font-medium ${
+                              m.is_direct
+                                ? 'bg-emerald-950/60 border-emerald-800/60 text-emerald-300'
+                                : m.relationship === 'Detection Rule Mapping'
+                                ? 'bg-yellow-950/60 border-yellow-800/60 text-yellow-300'
+                                : 'bg-blue-950/60 border-blue-800/60 text-blue-300'
+                            }`}>
+                              {m.relationship || (m.is_direct ? 'Explicit Investigation Mapping' : 'Inherited Mapping')}
+                            </span>
+                            <span className="text-gray-500">•</span>
+                            <span className="text-gray-400">
+                              Source: <span className="text-gray-200 font-mono font-medium">{m.source}</span>
+                            </span>
+                            <span className="text-gray-500">•</span>
+                            <span className="text-gray-400">
+                              Confidence: <span className={
+                                m.confidence === 'HIGH' ? 'text-emerald-400 font-bold' :
+                                m.confidence === 'MEDIUM' ? 'text-yellow-400 font-bold' : 'text-gray-300 font-bold'
+                              }>{m.confidence}</span>
+                            </span>
+                            {m.evidence_count != null && (
+                              <>
+                                <span className="text-gray-500">•</span>
+                                <span className="text-gray-400">
+                                  Evidence: <span className="text-white font-bold">{m.evidence_count} {m.evidence_count === 1 ? 'record' : 'records'}</span>
+                                </span>
+                              </>
+                            )}
+                          </div>
                         </div>
 
-                        <div className="mt-3 pt-2 border-t border-gray-800/60 flex items-center justify-between text-xs text-gray-500">
-                          <span className="truncate">
-                            Source: <span className="text-gray-300 font-medium">{m.source}</span>
-                            {m.is_direct ? (
-                              <span className="ml-1 text-[10px] text-emerald-400 font-semibold">(Direct)</span>
-                            ) : (
-                              <span className="ml-1 text-[10px] text-blue-400 font-semibold">(Inherited)</span>
+                        {/* Collapsible Details and Evidence Navigation */}
+                        {isExpanded && (
+                          <div className="mt-4 pt-3 border-t border-gray-800 text-xs space-y-3 bg-[#111116] -mx-4 -mb-4 p-4">
+                            {m.description && (
+                              <div>
+                                <div className="text-gray-500 font-semibold uppercase text-[10px] tracking-wider mb-1">
+                                  Technique Summary
+                                </div>
+                                <p className="text-gray-300 line-clamp-3 leading-relaxed">
+                                  {m.description}
+                                </p>
+                              </div>
                             )}
-                          </span>
-                          <span className="shrink-0 ml-2">
-                            Confidence: <span className={m.confidence === 'HIGH' ? 'text-emerald-400 font-medium' : m.confidence === 'MEDIUM' ? 'text-yellow-400 font-medium' : 'text-gray-400'}>{m.confidence}</span>
-                          </span>
-                        </div>
+
+                            <div>
+                              <div className="text-gray-500 font-semibold uppercase text-[10px] tracking-wider mb-1">
+                                Supporting Evidence & Provenance Trace
+                              </div>
+                              <div className="space-y-1.5">
+                                <div className="text-gray-400 flex items-center space-x-2">
+                                  <span className="text-gray-500">Reference:</span>
+                                  <span className="text-gray-200 font-mono">{m.evidence_reference || 'None specified'}</span>
+                                </div>
+
+                                {m.related_rules && m.related_rules.length > 0 && (
+                                  <div className="text-gray-400 flex items-center space-x-2">
+                                    <span className="text-gray-500">Originating Rule:</span>
+                                    <span className="font-mono text-yellow-300">
+                                      Rule #{m.related_rules.join(', #')}
+                                    </span>
+                                  </div>
+                                )}
+
+                                {m.related_alerts && m.related_alerts.length > 0 && (
+                                  <div className="text-gray-400 flex items-center space-x-2">
+                                    <span className="text-gray-500">Linked Alerts:</span>
+                                    <div className="flex flex-wrap gap-1">
+                                      {m.related_alerts.map((alId: string) => (
+                                        <button
+                                          key={alId}
+                                          type="button"
+                                          onClick={async () => {
+                                            try {
+                                              const alDetail = await api.get<any>(`/alerts/${alId}`)
+                                              setViewAlert(alDetail)
+                                            } catch {
+                                              setViewAlert({ id: alId, title: `Alert #${alId}`, severity: 'MEDIUM', status: 'OPEN' })
+                                            }
+                                          }}
+                                          className="text-[11px] bg-red-950/70 hover:bg-red-900 border border-red-800/60 text-red-300 px-1.5 py-0.2 rounded font-mono transition-colors"
+                                        >
+                                          Alert #{alId}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Timeline Navigation */}
+                            <div className="pt-2 border-t border-gray-800/60 flex items-center justify-between">
+                              <span className="text-gray-500">
+                                {m.is_direct ? 'Explicitly attached to investigation by analyst' : 'Inherited via investigation evidence relationship'}
+                              </span>
+                              <Link
+                                href={`/attack-timeline?investigation_id=${id}&search=${encodeURIComponent(m.technique_id)}`}
+                                className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-2.5 py-1 rounded transition-colors flex items-center space-x-1"
+                              >
+                                <span>View in Attack Timeline</span>
+                                <span>→</span>
+                              </Link>
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    ))}
+                    </div>
+                  )
+                }
+
+                if (mitreGroupByTactic) {
+                  // Group mappings by primary/assigned tactics
+                  const tacticGroups: { [tacticName: string]: any[] } = {}
+                  filtered.forEach((m: any) => {
+                    const tactics = m.tactics && m.tactics.length > 0 ? m.tactics : [{ tactic_id: 'UNASSIGNED', name: 'Other / General' }]
+                    tactics.forEach((tac: any) => {
+                      const tName = tac.name || tac.tactic_id
+                      if (!tacticGroups[tName]) tacticGroups[tName] = []
+                      // Avoid repeating within same group
+                      if (!tacticGroups[tName].some(item => item.mapping_id === m.mapping_id)) {
+                        tacticGroups[tName].push(m)
+                      }
+                    })
+                  })
+
+                  return (
+                    <div className="space-y-6">
+                      {Object.entries(tacticGroups).map(([tName, groupMappings]) => (
+                        <div key={tName} className="space-y-3">
+                          <div className="flex items-center space-x-2 border-b border-gray-800/80 pb-1.5">
+                            <span className="w-2 h-2 rounded-full bg-blue-500" />
+                            <h4 className="text-xs font-bold text-gray-200 uppercase tracking-wider">
+                              {tName}
+                            </h4>
+                            <span className="text-[10px] bg-gray-800 text-gray-400 px-1.5 py-0.2 rounded font-mono">
+                              {groupMappings.length}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            {groupMappings.map(renderMappingCard)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )
+                }
+
+                return (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {filtered.map(renderMappingCard)}
                   </div>
-                </div>
-              ) : (
-                <div className="text-center py-6 text-gray-500 text-sm">
-                  <p>No MITRE ATT&CK techniques explicitly mapped to this investigation or its evidence.</p>
-                  <p className="text-xs text-gray-600 mt-1">Techniques appear when explicitly mapped by an analyst or linked via configured detection rules.</p>
-                </div>
-              )}
+                )
+              })()}
             </CardContent>
           </Card>
 

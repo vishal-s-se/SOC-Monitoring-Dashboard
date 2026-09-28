@@ -505,6 +505,18 @@ async def create_mapping(mapping_in: MitreMappingCreate, db: AsyncSession = Depe
     """
     # 1. Verify technique exists
     cleaned_tid = mapping_in.technique_id.strip().upper()
+
+    # Validate sub-technique parent hierarchy consistency
+    if "." in cleaned_tid:
+        parent_id = cleaned_tid.split(".")[0]
+        parent_stmt = select(MitreTechniqueModel).where(MitreTechniqueModel.technique_id == parent_id)
+        parent_res = await db.execute(parent_stmt)
+        if not parent_res.scalars().first():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Parent technique '{parent_id}' for sub-technique '{cleaned_tid}' is not found in catalog"
+            )
+
     tech_stmt = select(MitreTechniqueModel).where(MitreTechniqueModel.technique_id == cleaned_tid)
     tech_res = await db.execute(tech_stmt)
     tech = tech_res.scalars().first()

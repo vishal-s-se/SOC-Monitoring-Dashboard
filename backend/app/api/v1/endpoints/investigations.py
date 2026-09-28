@@ -455,11 +455,21 @@ async def get_investigation_context(id: int, db: AsyncSession = Depends(get_db))
             "mapping_id": m.id,
             "technique_id": t.technique_id,
             "technique_name": t.name,
+            "description": t.description,
+            "is_subtechnique": t.is_subtechnique,
+            "parent_technique_id": t.parent_technique_id,
             "tactics": tactics,
             "source": m.mapping_source,
             "confidence": m.confidence,
             "evidence_reference": m.evidence_reference or f"Investigation #{id}",
-            "is_direct": True
+            "is_direct": True,
+            "relationship": "Explicit Investigation Mapping",
+            "evidence_count": 1,
+            "related_alerts": [],
+            "related_rules": [],
+            "created_at": m.created_at.isoformat() if m.created_at else None,
+            "notes": m.notes,
+            "created_by": m.created_by
         })
         seen_techs.add(t.technique_id)
 
@@ -489,22 +499,35 @@ async def get_investigation_context(id: int, db: AsyncSession = Depends(get_db))
                     "mapping_id": m.id,
                     "technique_id": t.technique_id,
                     "technique_name": t.name,
+                    "description": t.description,
+                    "is_subtechnique": t.is_subtechnique,
+                    "parent_technique_id": t.parent_technique_id,
                     "tactics": tactics,
                     "source": m.mapping_source,
                     "confidence": m.confidence,
                     "evidence_reference": m.evidence_reference or f"Alert #{m.target_id}",
-                    "is_direct": False
+                    "is_direct": False,
+                    "relationship": "Alert-Inherited Mapping",
+                    "evidence_count": 1,
+                    "related_alerts": [m.target_id],
+                    "related_rules": [],
+                    "created_at": m.created_at.isoformat() if m.created_at else None,
+                    "notes": m.notes,
+                    "created_by": m.created_by
                 })
                 seen_techs.add(t.technique_id)
 
         # Inherited from Detection Rules of attached alerts
         al_objs_res = await db.execute(select(AlertModel).where(AlertModel.id.in_(alert_ids)))
-        rule_ids_to_check = set()
+        rule_to_alerts = {}
         for a_obj in al_objs_res.scalars().all():
             if a_obj.rule_id:
-                rule_ids_to_check.add(str(a_obj.rule_id))
+                rule_str = str(a_obj.rule_id)
+                if rule_str not in rule_to_alerts:
+                    rule_to_alerts[rule_str] = []
+                rule_to_alerts[rule_str].append(a_obj.alert_id or str(a_obj.id))
 
-        if rule_ids_to_check:
+        if rule_to_alerts:
             rule_mitre_stmt = (
                 select(MitreMappingModel, MitreTechniqueModel)
                 .join(MitreTechniqueModel, MitreMappingModel.technique_id == MitreTechniqueModel.technique_id)
@@ -513,7 +536,7 @@ async def get_investigation_context(id: int, db: AsyncSession = Depends(get_db))
                 )
                 .where(
                     MitreMappingModel.target_type == "DETECTION_RULE",
-                    MitreMappingModel.target_id.in_(list(rule_ids_to_check))
+                    MitreMappingModel.target_id.in_(list(rule_to_alerts.keys()))
                 )
             )
             rule_mitre_res = await db.execute(rule_mitre_stmt)
@@ -523,15 +546,26 @@ async def get_investigation_context(id: int, db: AsyncSession = Depends(get_db))
                         {"tactic_id": tt.tactic.tactic_id, "name": tt.tactic.name}
                         for tt in t.tactics if tt.tactic
                     ]
+                    linked_alerts = rule_to_alerts.get(m.target_id, [])
                     context["mitre"].append({
                         "mapping_id": m.id,
                         "technique_id": t.technique_id,
                         "technique_name": t.name,
+                        "description": t.description,
+                        "is_subtechnique": t.is_subtechnique,
+                        "parent_technique_id": t.parent_technique_id,
                         "tactics": tactics,
                         "source": m.mapping_source,
                         "confidence": m.confidence,
                         "evidence_reference": m.evidence_reference or f"Rule #{m.target_id} (via Alert)",
-                        "is_direct": False
+                        "is_direct": False,
+                        "relationship": "Detection Rule Mapping",
+                        "evidence_count": len(linked_alerts),
+                        "related_alerts": linked_alerts,
+                        "related_rules": [m.target_id],
+                        "created_at": m.created_at.isoformat() if m.created_at else None,
+                        "notes": m.notes,
+                        "created_by": m.created_by
                     })
                     seen_techs.add(t.technique_id)
 
@@ -560,6 +594,86 @@ async def get_investigation_summary(id: int, db: AsyncSession = Depends(get_db))
     note_count = note_res.scalar_one()
 
     total = sum(counts.values())
+
+    # Calculate MITRE ATT&CK metrics for this investigation (explicit + evidence inherited)
+    # 1. Directly mapped
+    inv_maps_res = await db.execute(
+        select(MitreMappingModel, MitreTechniqueModel)
+        .join(MitreTechniqueModel, MitreMappingModel.technique_id == MitreTechniqueModel.technique_id)
+        .options(selectinload(MitreTechniqueModel.tactics))
+        .where(
+            MitreMappingModel.target_type == "INVESTIGATION",
+            MitreMappingModel.target_id == str(id)
+        )
+    )
+    direct_mappings = inv_maps_res.all()
+
+    # 2. Inherited from attached alerts
+    al_ev_res = await db.execute(
+        select(InvestigationEvidence.reference_id)
+        .where(
+            InvestigationEvidence.investigation_id == id,
+            InvestigationEvidence.evidence_type == "ALERT"
+        )
+    )
+    alert_ref_ids = [r[0] for r in al_ev_res.all() if r[0]]
+
+    inherited_mappings = []
+    if alert_ref_ids:
+        # Alert-level mappings
+        al_map_res = await db.execute(
+            select(MitreMappingModel, MitreTechniqueModel)
+            .join(MitreTechniqueModel, MitreMappingModel.technique_id == MitreTechniqueModel.technique_id)
+            .options(selectinload(MitreTechniqueModel.tactics))
+            .where(
+                MitreMappingModel.target_type == "ALERT",
+                MitreMappingModel.target_id.in_(alert_ref_ids)
+            )
+        )
+        inherited_mappings.extend(al_map_res.all())
+
+        # Rule-level mappings for those alerts
+        int_alert_ids = [int(aid) for aid in alert_ref_ids if aid.isdigit()]
+        if int_alert_ids:
+            al_objs = await db.execute(select(AlertModel).where(AlertModel.id.in_(int_alert_ids)))
+            rule_ids = [str(a.rule_id) for a in al_objs.scalars().all() if a.rule_id]
+            if rule_ids:
+                rule_map_res = await db.execute(
+                    select(MitreMappingModel, MitreTechniqueModel)
+                    .join(MitreTechniqueModel, MitreMappingModel.technique_id == MitreTechniqueModel.technique_id)
+                    .options(selectinload(MitreTechniqueModel.tactics))
+                    .where(
+                        MitreMappingModel.target_type == "DETECTION_RULE",
+                        MitreMappingModel.target_id.in_(rule_ids)
+                    )
+                )
+                inherited_mappings.extend(rule_map_res.all())
+
+    # Deduplicate techniques and aggregate metrics
+    all_seen_techs = set()
+    all_seen_tactics = set()
+    analyst_confirmed_count = 0
+    documented_rules_count = 0
+
+    for m, t in direct_mappings:
+        all_seen_techs.add(t.technique_id)
+        for tt in (t.tactics or []):
+            all_seen_tactics.add(tt.tactic_id)
+        if m.mapping_source == "ANALYST_CONFIRMED":
+            analyst_confirmed_count += 1
+        elif m.mapping_source == "DOCUMENTED_RULE":
+            documented_rules_count += 1
+
+    for m, t in inherited_mappings:
+        if t.technique_id not in all_seen_techs:
+            all_seen_techs.add(t.technique_id)
+            for tt in (t.tactics or []):
+                all_seen_tactics.add(tt.tactic_id)
+            if m.mapping_source == "ANALYST_CONFIRMED":
+                analyst_confirmed_count += 1
+            elif m.mapping_source == "DOCUMENTED_RULE":
+                documented_rules_count += 1
+
     return InvestigationEvidenceSummary(
         alerts=counts["ALERT"],
         events=counts["EVENT"],
@@ -567,7 +681,11 @@ async def get_investigation_summary(id: int, db: AsyncSession = Depends(get_db))
         hosts=counts["HOST"],
         agents=counts["AGENT"],
         notes=note_count,
-        total_evidence=total
+        total_evidence=total,
+        mitre_techniques=len(all_seen_techs),
+        mitre_tactics=len(all_seen_tactics),
+        analyst_confirmed=analyst_confirmed_count,
+        documented_rules=documented_rules_count
     )
 
 

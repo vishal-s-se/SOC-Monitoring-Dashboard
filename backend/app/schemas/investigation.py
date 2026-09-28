@@ -93,3 +93,7 @@ class InvestigationEvidenceSummary(BaseModel):
     agents: int = 0
     notes: int = 0
     total_evidence: int = 0
+    mitre_techniques: int = 0
+    mitre_tactics: int = 0
+    analyst_confirmed: int = 0
+    documented_rules: int = 0

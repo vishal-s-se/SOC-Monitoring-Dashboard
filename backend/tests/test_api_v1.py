@@ -1197,3 +1197,80 @@ async def test_mitre_attack_foundation_phase_7e1(client: AsyncClient, db: AsyncS
     assert res_inv_inherit_ctx.status_code == 200
     inv_ctx_mitre = res_inv_inherit_ctx.json()["mitre"]
     assert any(m["technique_id"] == "T1059.001" and m["is_direct"] is False for m in inv_ctx_mitre)
+
+    # 18. Phase 7E-3: Investigation Summary MITRE Metrics & Enriched Context Details
+    res_inv_sum = await client.get(f"/api/v1/investigations/{inv_rule_test.id}/summary")
+    assert res_inv_sum.status_code == 200
+    sum_data = res_inv_sum.json()
+    assert "mitre_techniques" in sum_data
+    assert "mitre_tactics" in sum_data
+    assert "analyst_confirmed" in sum_data
+    assert "documented_rules" in sum_data
+    assert sum_data["mitre_techniques"] >= 1
+    assert sum_data["documented_rules"] >= 1
+    assert sum_data["analyst_confirmed"] == 0
+
+    # Add an explicit analyst confirmed mapping to inv_rule_test
+    res_explicit = await client.post(
+        "/api/v1/mitre/mappings",
+        json={
+            "target_type": "INVESTIGATION",
+            "target_id": str(inv_rule_test.id),
+            "technique_id": "T1059",
+            "mapping_source": "ANALYST_CONFIRMED",
+            "confidence": "HIGH",
+            "notes": "Analyst observed script execution",
+            "created_by": "secops"
+        }
+    )
+    assert res_explicit.status_code == 201
+    explicit_id = res_explicit.json()["id"]
+
+    # Verify summary updates with analyst confirmed
+    res_inv_sum2 = await client.get(f"/api/v1/investigations/{inv_rule_test.id}/summary")
+    assert res_inv_sum2.status_code == 200
+    sum_data2 = res_inv_sum2.json()
+    assert sum_data2["analyst_confirmed"] == 1
+
+    # Verify enriched context for Phase 7E-3
+    res_enriched_ctx = await client.get(f"/api/v1/investigations/{inv_rule_test.id}/context")
+    assert res_enriched_ctx.status_code == 200
+    mitre_list = res_enriched_ctx.json()["mitre"]
+    assert len(mitre_list) >= 2
+    explicit_item = next((m for m in mitre_list if m["technique_id"] == "T1059"), None)
+    assert explicit_item is not None
+    assert explicit_item["relationship"] == "Explicit Investigation Mapping"
+    assert explicit_item["is_direct"] is True
+    assert explicit_item["evidence_count"] >= 1
+
+    inherited_item = next((m for m in mitre_list if m["technique_id"] == "T1059.001"), None)
+    assert inherited_item is not None
+    assert inherited_item["relationship"] == "Detection Rule Mapping"
+    assert inherited_item["is_direct"] is False
+    assert len(inherited_item["related_alerts"]) >= 1
+
+    # 19. Phase 7E-3: Sub-technique parent hierarchy validation
+    res_bad_sub = await client.post(
+        "/api/v1/mitre/mappings",
+        json={
+            "target_type": "INVESTIGATION",
+            "target_id": str(inv_rule_test.id),
+            "technique_id": "T9999.001",
+            "mapping_source": "ANALYST_CONFIRMED",
+            "confidence": "LOW"
+        }
+    )
+    assert res_bad_sub.status_code == 400
+    assert "Parent technique" in res_bad_sub.json()["detail"] or "Technique" in res_bad_sub.json()["detail"]
+
+    # 20. Phase 7E-3: Deletion safety — deleting explicit mapping leaves rule and alert intact
+    res_del = await client.delete(f"/api/v1/mitre/mappings/{explicit_id}")
+    assert res_del.status_code == 204
+
+    # Check alert still exists
+    res_alt_check = await client.get(f"/api/v1/alerts/{alert_inherited.alert_id}")
+    assert res_alt_check.status_code == 200
+
+    # Check detection rule still exists
+    res_rule_check = await client.get(f"/api/v1/detections/rules/{rule.id}")
+    assert res_rule_check.status_code == 200
