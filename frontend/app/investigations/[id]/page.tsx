@@ -28,6 +28,7 @@ export default function InvestigationDetailPage() {
   const [inv, setInv] = useState<any>(null)
   const [context, setContext] = useState<any>(null)
   const [evidenceSummary, setEvidenceSummary] = useState<any>(null)
+  const [intel, setIntel] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
 
@@ -94,15 +95,17 @@ export default function InvestigationDetailPage() {
   const loadData = useCallback(async () => {
     try {
       setLoading(true)
-      const [res, ctx, summ] = await Promise.all([
+      const [res, ctx, summ, intelRes] = await Promise.all([
         api.get<any>(`/investigations/${id}`),
         api.get<any>(`/investigations/${id}/context`),
-        api.get<any>(`/investigations/${id}/summary`)
+        api.get<any>(`/investigations/${id}/summary`),
+        api.get<any>(`/investigations/${id}/intelligence`)
       ])
       setInv(res)
       setStatus(res.status)
       setContext(ctx)
       setEvidenceSummary(summ)
+      setIntel(intelRes)
       setError("")
     } catch (err: any) {
       setError(err.message || "Failed to load investigation")

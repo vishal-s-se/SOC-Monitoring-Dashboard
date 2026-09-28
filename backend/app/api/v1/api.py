@@ -15,7 +15,8 @@ from backend.app.api.v1.endpoints import (
     host_investigation,
     user_context,
     event_context,
-    alert_context
+    alert_context,
+    investigation_intelligence
 )
 
 api_router = APIRouter()
@@ -28,6 +29,7 @@ api_router.include_router(hosts.router, prefix="/hosts", tags=["hosts"])
 api_router.include_router(detections.router, prefix="/detections", tags=["detections"])
 api_router.include_router(ws.router, prefix="/ws", tags=["websocket"])
 api_router.include_router(investigations.router, prefix="/investigations", tags=["investigations"])
+api_router.include_router(investigation_intelligence.router, prefix="/investigations", tags=["investigation-intelligence"])
 api_router.include_router(timeline.router, prefix="/attack-timeline", tags=["attack-timeline"])
 api_router.include_router(mitre.router, prefix="/mitre", tags=["mitre"])
 api_router.include_router(ip_investigation.router, prefix="/ip-investigation", tags=["ip-investigation"])

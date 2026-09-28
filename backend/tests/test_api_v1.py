@@ -2205,3 +2205,103 @@ async def test_threat_context_phase_7f3(client: AsyncClient, db: AsyncSession):
     )
     assert res_uc_time.status_code == 200
     assert res_uc_time.json()["summary"]["total_events"] == 2
+
+
+@pytest.mark.asyncio
+async def test_investigation_intelligence_phase_7f4(client: AsyncClient, db: AsyncSession):
+    base_time = datetime.now(timezone.utc)
+    
+    # Create Investigation
+    inv = Investigation(title="Phase 7F-4 Intelligence Test", status="OPEN", severity="HIGH")
+    db.add(inv)
+    await db.flush()
+
+    # Create Event
+    ev = Event(
+        event_id=f"evt-7f4-{uuid.uuid4().hex[:6]}",
+        timestamp=base_time,
+        event_category="authentication",
+        event_type="login",
+        hostname="server-7f4",
+        source_ip="192.168.1.10",
+        username="admin_7f4"
+    )
+    db.add(ev)
+    await db.flush()
+
+    # Create Rule & Alert
+    rule = DetectionRule(
+        rule_id=f"rule-7f4-{uuid.uuid4().hex[:6]}",
+        name="Rule 7F-4",
+        severity="HIGH",
+        conditions=[{"field": "event_type", "operator": "equals", "value": "login"}]
+    )
+    db.add(rule)
+    await db.flush()
+
+    alert = Alert(
+        alert_id=f"al-7f4-{uuid.uuid4().hex[:6]}",
+        title="Alert 7F-4",
+        severity="HIGH",
+        status="OPEN",
+        occurrence_count=1,
+        fingerprint=f"fp-7f4-{uuid.uuid4().hex[:8]}",
+        rule_id=rule.id,
+        first_seen=base_time,
+        last_seen=base_time
+    )
+    db.add(alert)
+    await db.flush()
+
+    dr = DetectionResult(rule_id=rule.id, event_id=ev.id, alert_id=alert.id)
+    db.add(dr)
+    
+    # Evidence
+    ev_evidence = InvestigationEvidence(investigation_id=inv.id, evidence_type="EVENT", reference_id=str(ev.id))
+    al_evidence = InvestigationEvidence(investigation_id=inv.id, evidence_type="ALERT", reference_id=str(alert.id))
+    db.add_all([ev_evidence, al_evidence])
+    await db.commit()
+
+    # Call the endpoint
+    res = await client.get(f"/api/v1/investigations/{inv.id}/intelligence")
+    assert res.status_code == 200, res.text
+    data = res.json()
+
+    assert data["investigation_id"] == inv.id
+    
+    # Summary checks
+    assert data["summary"]["total_evidence"] == 2
+    assert data["summary"]["events"] == 1
+    assert data["summary"]["alerts"] == 1
+    assert data["summary"]["hosts"] == 1
+    assert data["summary"]["source_ips"] == 1
+    assert data["summary"]["users"] == 1
+
+    # Entity checks
+    assert len(data["hosts"]) == 1
+    assert data["hosts"][0]["hostname"] == "server-7f4"
+    assert data["hosts"][0]["event_count"] == 1
+    
+    assert len(data["ips"]) == 1
+    assert data["ips"][0]["ip_address"] == "192.168.1.10"
+    
+    assert len(data["users"]) == 1
+    assert data["users"][0]["username"] == "admin_7f4"
+
+    # Alerts & Rules
+    assert len(data["alerts"]) == 1
+    assert data["alerts"][0]["alert_id"] == alert.alert_id
+    
+    assert len(data["detection_rules"]) == 1
+    assert data["detection_rules"][0]["rule_id"] == rule.rule_id
+
+    # Timeline & Events
+    assert data["timeline_summary"]["total_timeline_events"] == 1
+    assert data["timeline_summary"]["direct_evidence_count"] == 1
+    assert len(data["events"]) == 1
+    assert data["events"][0]["is_direct"] is True
+
+    # 404 test
+    res_404 = await client.get("/api/v1/investigations/999999/intelligence")
+    assert res_404.status_code == 404
+
