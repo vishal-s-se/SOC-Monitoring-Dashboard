@@ -851,7 +851,12 @@ export default function InvestigationDetailPage() {
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1">
-                            <span className="text-sm font-medium text-white">{item.data.hostname}</span>
+                            <Link
+                              href={`/host-investigation?host=${encodeURIComponent(item.data.hostname || item.data.id)}`}
+                              className="text-sm font-medium text-blue-400 hover:text-blue-300 hover:underline"
+                            >
+                              {item.data.hostname}
+                            </Link>
                             <StatusBadge status={item.data.status || 'UNKNOWN'} />
                           </div>
                           <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 mt-1 text-xs text-gray-500">
@@ -873,7 +878,12 @@ export default function InvestigationDetailPage() {
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
                           <button onClick={() => handleLoadRelated(item.evidence_id, item.data)} className="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 px-2 py-1 rounded">Correlate</button>
-                          <Link href="/hosts" className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded">View</Link>
+                          <Link
+                            href={`/host-investigation?host=${encodeURIComponent(item.data.hostname || item.data.id)}`}
+                            className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded"
+                          >
+                            Investigate Host
+                          </Link>
                           <button onClick={() => removeEvidence(item.evidence_id)} className="text-xs text-red-400 hover:text-red-300 px-2 py-1">Remove</button>
                         </div>
                       </div>

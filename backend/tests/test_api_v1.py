@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 load_dotenv(".env.test")
 
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy import select
 from sqlalchemy.pool import NullPool
 from httpx import AsyncClient
 
@@ -1675,4 +1676,279 @@ async def test_source_ip_investigation_phase_7f1(client: AsyncClient, db: AsyncS
         params={"start_time": valid_end, "end_time": valid_start}
     )
     assert res_bad_time.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_host_investigation_phase_7f2(client: AsyncClient, db: AsyncSession):
+    from backend.app.services.mitre_seeder import seed_mitre_catalog
+    await seed_mitre_catalog(db)
+
+    base_time = datetime.now(timezone.utc) - timedelta(hours=3)
+
+    # 1. Test Host Resolution & 404 / 400 errors
+    res_404 = await client.get("/api/v1/host-investigation/nonexistent-host-999")
+    assert res_404.status_code == 404
+
+    res_404_id = await client.get("/api/v1/host-investigation/999999")
+    assert res_404_id.status_code == 404
+
+    # 2. Create Host & Associated Agent
+    host_target = Host(
+        host_identifier="host-srv-corp-01",
+        hostname="srv-corp-01",
+        operating_system="linux",
+        os_version="Ubuntu 22.04",
+        ip_address="10.0.10.15",
+        status="ONLINE",
+        created_at=base_time,
+        last_seen=base_time + timedelta(hours=2)
+    )
+    db.add(host_target)
+    await db.flush()
+
+    agent_target = Agent(
+        agent_id="agt-srv-corp-01",
+        host_id=host_target.id,
+        hostname="srv-corp-01",
+        operating_system="linux",
+        agent_version="1.4.2",
+        status="ONLINE",
+        ip_address="10.0.10.15",
+        registered_at=base_time,
+        last_heartbeat=base_time + timedelta(hours=2),
+        last_seen=base_time + timedelta(hours=2)
+    )
+    db.add(agent_target)
+    await db.flush()
+
+    # 3. Create Telemetry Events for this host
+    ev1 = Event(
+        event_id=f"evt-host-01-{uuid.uuid4().hex[:6]}",
+        timestamp=base_time,
+        host_id=host_target.id,
+        agent_id=agent_target.id,
+        hostname=host_target.hostname,
+        operating_system=host_target.operating_system,
+        source_type="syslog",
+        event_category="authentication",
+        event_type="ssh_login",
+        username="sec_admin",
+        source_ip="10.0.10.50",
+        destination_ip="10.0.10.15",
+        source_port=52344,
+        destination_port=22,
+        protocol="TCP",
+        action="login_success",
+        severity="INFO"
+    )
+    ev2 = Event(
+        event_id=f"evt-host-02-{uuid.uuid4().hex[:6]}",
+        timestamp=base_time + timedelta(minutes=15),
+        host_id=host_target.id,
+        agent_id=agent_target.id,
+        hostname=host_target.hostname,
+        operating_system=host_target.operating_system,
+        source_type="syslog",
+        event_category="process",
+        event_type="process_spawn",
+        username="root",
+        source_ip="10.0.10.15",
+        destination_ip="10.0.20.100",
+        source_port=44231,
+        destination_port=8080,
+        protocol="TCP",
+        action="exec",
+        severity="MEDIUM"
+    )
+    ev3 = Event(
+        event_id=f"evt-host-03-{uuid.uuid4().hex[:6]}",
+        timestamp=base_time + timedelta(minutes=30),
+        host_id=host_target.id,
+        agent_id=agent_target.id,
+        hostname=host_target.hostname,
+        operating_system=host_target.operating_system,
+        source_type="syslog",
+        event_category="network",
+        event_type="connection_closed",
+        username="sec_admin",
+        source_ip="10.0.10.15",
+        destination_ip="10.0.20.100",
+        source_port=44231,
+        destination_port=8080,
+        protocol="TCP",
+        action="close",
+        severity="LOW"
+    )
+    db.add_all([ev1, ev2, ev3])
+    await db.flush()
+
+    # 4. Create Detection Rule, Alert, and DetectionResult
+    rule_host = DetectionRule(
+        rule_id=f"rule-host-{uuid.uuid4().hex[:6]}",
+        name="Host Suspicious Execution Rule",
+        description="Rule detecting suspicious host execution",
+        severity="HIGH",
+        conditions=[{"field": "event_type", "operator": "equals", "value": "process_spawn"}]
+    )
+    db.add(rule_host)
+    await db.flush()
+
+    alert_host = Alert(
+        alert_id=f"al-host-{uuid.uuid4().hex[:6]}",
+        title="Suspicious Process on Host",
+        description="Alert for process execution",
+        severity="HIGH",
+        status="OPEN",
+        occurrence_count=2,
+        fingerprint=f"fp-host-{uuid.uuid4().hex[:8]}",
+        rule_id=rule_host.id,
+        agent_id=agent_target.id,
+        host_id=host_target.id,
+        first_seen=base_time + timedelta(minutes=15),
+        last_seen=base_time + timedelta(minutes=30)
+    )
+    db.add(alert_host)
+    await db.flush()
+
+    dr1 = DetectionResult(rule_id=rule_host.id, event_id=ev2.id, alert_id=alert_host.id)
+    dr2 = DetectionResult(rule_id=rule_host.id, event_id=ev3.id, alert_id=alert_host.id)
+    db.add_all([dr1, dr2])
+    await db.flush()
+
+    # 5. MITRE Mapping to Rule and Host
+    rule_map = MitreMapping(
+        technique_id="T1059",
+        target_type=MitreTargetType.DETECTION_RULE.value,
+        target_id=str(rule_host.id),
+        mapping_source=MitreMappingSource.DOCUMENTED_RULE.value,
+        confidence=MitreConfidence.HIGH.value
+    )
+    db.add(rule_map)
+    await db.flush()
+
+    # 6. Create Investigation with evidence linking to host and alert
+    inv_host = Investigation(
+        title="Investigation on srv-corp-01",
+        description="Host investigation case",
+        status="OPEN",
+        severity="HIGH"
+    )
+    db.add(inv_host)
+    await db.flush()
+
+    ev_link1 = InvestigationEvidence(
+        investigation_id=inv_host.id,
+        evidence_type="HOST",
+        reference_id=str(host_target.id),
+        description="Primary host"
+    )
+    ev_link2 = InvestigationEvidence(
+        investigation_id=inv_host.id,
+        evidence_type="ALERT",
+        reference_id=str(alert_host.id),
+        description="Alert evidence"
+    )
+    db.add_all([ev_link1, ev_link2])
+    await db.commit()
+
+    # 7. Test Overview Endpoint: GET /api/v1/host-investigation/{host_id} by ID and by hostname
+    res_ov_id = await client.get(f"/api/v1/host-investigation/{host_target.id}")
+    assert res_ov_id.status_code == 200
+    ov_data = res_ov_id.json()
+
+    # Verify Host Identity & Agent Relationship
+    assert ov_data["host"]["id"] == host_target.id
+    assert ov_data["host"]["hostname"] == "srv-corp-01"
+    assert ov_data["host"]["operating_system"] == "linux"
+    assert len(ov_data["agents"]) == 1
+    assert ov_data["agents"][0]["agent_id"] == "agt-srv-corp-01"
+    assert ov_data["agents"][0]["status"] == "ONLINE"
+
+    # Verify Summary Metrics
+    summary = ov_data["summary"]
+    assert summary["host_id"] == host_target.id
+    assert summary["hostname"] == "srv-corp-01"
+    assert summary["total_events"] == 3
+    assert summary["alerts_count"] == 1  # Deduplicated alert
+    assert summary["users_count"] == 2   # sec_admin and root
+    assert summary["source_ips_count"] >= 1
+    assert summary["destination_ips_count"] >= 1
+    assert summary["investigations_count"] >= 1
+    assert summary["mitre_techniques_count"] >= 1
+
+    # Verify Observed Users
+    users_seen = {u["username"]: u["event_count"] for u in ov_data["users"]}
+    assert "sec_admin" in users_seen
+    assert users_seen["sec_admin"] == 2
+    assert "root" in users_seen
+    assert users_seen["root"] == 1
+
+    # Verify Source and Destination IPs
+    src_ips = {ip["ip_address"] for ip in ov_data["source_ips"]}
+    assert "10.0.10.50" in src_ips
+    assert "10.0.10.15" in src_ips
+
+    dst_ips = {ip["ip_address"] for ip in ov_data["destination_ips"]}
+    assert "10.0.10.15" in dst_ips
+    assert "10.0.20.100" in dst_ips
+
+    # Verify Associated Investigations
+    assert any(inv["id"] == inv_host.id for inv in ov_data["investigations"])
+
+    # Verify MITRE Techniques
+    assert any(mt["technique_id"] == "T1059" for mt in ov_data["mitre_techniques"])
+
+    # Test Resolve by Hostname
+    res_ov_name = await client.get(f"/api/v1/host-investigation/{host_target.hostname}")
+    assert res_ov_name.status_code == 200
+    assert res_ov_name.json()["host"]["id"] == host_target.id
+
+    # 8. Test Host Events Endpoint: GET /api/v1/host-investigation/{host_id}/events
+    res_evs = await client.get(f"/api/v1/host-investigation/{host_target.id}/events")
+    assert res_evs.status_code == 200
+    evs_data = res_evs.json()
+    assert evs_data["total"] == 3
+    assert len(evs_data["items"]) == 3
+
+    # Filter events by category
+    res_ev_cat = await client.get(f"/api/v1/host-investigation/{host_target.id}/events?event_category=authentication")
+    assert res_ev_cat.status_code == 200
+    assert res_ev_cat.json()["total"] == 1
+    assert res_ev_cat.json()["items"][0]["event_type"] == "ssh_login"
+
+    # Filter events by protocol
+    res_ev_proto = await client.get(f"/api/v1/host-investigation/{host_target.id}/events?protocol=tcp")
+    assert res_ev_proto.status_code == 200
+    assert res_ev_proto.json()["total"] == 3
+
+    # Filter events by username
+    res_ev_user = await client.get(f"/api/v1/host-investigation/{host_target.id}/events?username=root")
+    assert res_ev_user.status_code == 200
+    assert res_ev_user.json()["total"] == 1
+
+    # 9. Test Host Alerts Endpoint: GET /api/v1/host-investigation/{host_id}/alerts
+    res_als = await client.get(f"/api/v1/host-investigation/{host_target.id}/alerts")
+    assert res_als.status_code == 200
+    als_data = res_als.json()
+    assert als_data["total"] == 1
+    assert als_data["items"][0]["id"] == alert_host.id
+    assert "T1059" in als_data["items"][0]["mitre_techniques"]
+
+    # 10. Time range testing
+    valid_start = (base_time + timedelta(minutes=10)).isoformat()
+    valid_end = (base_time + timedelta(minutes=45)).isoformat()
+    res_time = await client.get(
+        f"/api/v1/host-investigation/{host_target.id}",
+        params={"start_time": valid_start, "end_time": valid_end}
+    )
+    assert res_time.status_code == 200
+    assert res_time.json()["summary"]["total_events"] == 2  # ev2 and ev3
+
+    # Reversed time range error
+    res_bad_time = await client.get(
+        f"/api/v1/host-investigation/{host_target.id}",
+        params={"start_time": valid_end, "end_time": valid_start}
+    )
+    assert res_bad_time.status_code == 400
+
 

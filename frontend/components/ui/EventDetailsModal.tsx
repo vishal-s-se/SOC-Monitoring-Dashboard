@@ -55,7 +55,17 @@ export function EventDetailsModal({ event, onClose }: { event: any, onClose: () 
             </div>
             <div>
               <p className="text-xs text-gray-500 uppercase">Host</p>
-              <p className="text-sm text-gray-200 font-medium">{event.hostname || 'N/A'}</p>
+              {event.hostname ? (
+                <Link
+                  href={`/host-investigation?host=${encodeURIComponent(event.hostname)}`}
+                  onClick={onClose}
+                  className="text-sm text-blue-400 hover:text-blue-300 hover:underline font-medium"
+                >
+                  {event.hostname}
+                </Link>
+              ) : (
+                <p className="text-sm text-gray-200 font-medium">N/A</p>
+              )}
             </div>
             <div>
               <p className="text-xs text-gray-500 uppercase">Agent ID</p>

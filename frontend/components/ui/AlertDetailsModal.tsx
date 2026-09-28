@@ -106,7 +106,17 @@ export function AlertDetailsModal({ alert, onClose }: Props) {
             </div>
             <div>
               <p className="text-xs text-gray-500 uppercase">Host ID</p>
-              <p className="text-sm text-gray-200 mt-1">{alert.host_id || 'N/A'}</p>
+              {alert.host_id ? (
+                <Link
+                  href={`/host-investigation?host=${encodeURIComponent(alert.host_id)}`}
+                  onClick={onClose}
+                  className="text-sm text-blue-400 hover:text-blue-300 hover:underline font-mono mt-1 inline-block"
+                >
+                  {alert.host_id}
+                </Link>
+              ) : (
+                <p className="text-sm text-gray-200 mt-1">N/A</p>
+              )}
             </div>
           </div>
 

@@ -61,7 +61,16 @@ export default function AgentsPage() {
             keyExtractor={(r) => r.agent_id}
             columns={[
               { key: 'status', title: 'Status', render: (r) => <StatusBadge status={r.status} /> },
-              { key: 'hostname', title: 'Hostname', render: (r) => <span className="font-medium text-gray-200">{r.hostname}</span> },
+              { key: 'hostname', title: 'Hostname', render: (r) => (
+                r.hostname ? (
+                  <Link
+                    href={`/host-investigation?host=${encodeURIComponent(r.hostname)}`}
+                    className="font-medium text-blue-400 hover:text-blue-300 hover:underline"
+                  >
+                    {r.hostname}
+                  </Link>
+                ) : <span className="text-gray-500">-</span>
+              )},
               { key: 'ip_address', title: 'IP Address', render: (r) => (
                 r.ip_address ? (
                   <Link
@@ -76,12 +85,22 @@ export default function AgentsPage() {
               { key: 'agent_version', title: 'Version' },
               { key: 'last_heartbeat', title: 'Last Heartbeat', render: (r) => r.last_heartbeat ? new Date(r.last_heartbeat).toLocaleString() : 'Never' },
               { key: 'actions', title: 'Actions', render: (r) => (
-                <Link
-                  href={`/attack-timeline?agent_id=${r.id || r.agent_id}`}
-                  className="text-xs bg-gray-800 hover:bg-indigo-600 text-gray-300 hover:text-white px-2.5 py-1 rounded transition-colors inline-block"
-                >
-                  View Timeline
-                </Link>
+                <div className="flex items-center space-x-2">
+                  {r.hostname && (
+                    <Link
+                      href={`/host-investigation?host=${encodeURIComponent(r.hostname)}`}
+                      className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 rounded transition-colors inline-block font-medium"
+                    >
+                      Investigate Host
+                    </Link>
+                  )}
+                  <Link
+                    href={`/attack-timeline?agent_id=${r.id || r.agent_id}`}
+                    className="text-xs bg-gray-800 hover:bg-indigo-600 text-gray-300 hover:text-white px-2.5 py-1 rounded transition-colors inline-block"
+                  >
+                    View Timeline
+                  </Link>
+                </div>
               )},
             ]}
           />

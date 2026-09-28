@@ -45,7 +45,14 @@ export default function HostsPage() {
             data={hosts}
             keyExtractor={(r) => r.id}
             columns={[
-              { key: 'hostname', title: 'Hostname', render: (r) => <span className="font-medium text-gray-200">{r.hostname}</span> },
+              { key: 'hostname', title: 'Hostname', render: (r) => (
+                <Link
+                  href={`/host-investigation?host=${encodeURIComponent(r.hostname || r.id)}`}
+                  className="font-medium text-blue-400 hover:text-blue-300 hover:underline"
+                >
+                  {r.hostname}
+                </Link>
+              )},
               { key: 'ip_address', title: 'Primary IP', render: (r) => (
                 r.ip_address ? (
                   <Link
@@ -70,12 +77,20 @@ export default function HostsPage() {
               )},
               { key: 'first_seen', title: 'Discovered', render: (r) => r.first_seen ? new Date(r.first_seen).toLocaleDateString() : '-' },
               { key: 'actions', title: 'Actions', render: (r) => (
-                <Link
-                  href={`/attack-timeline?hostname=${encodeURIComponent(r.hostname)}`}
-                  className="text-xs bg-gray-800 hover:bg-indigo-600 text-gray-300 hover:text-white px-2.5 py-1 rounded transition-colors inline-block"
-                >
-                  View Timeline
-                </Link>
+                <div className="flex items-center space-x-2">
+                  <Link
+                    href={`/host-investigation?host=${encodeURIComponent(r.hostname || r.id)}`}
+                    className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 rounded transition-colors inline-block font-medium"
+                  >
+                    Investigate
+                  </Link>
+                  <Link
+                    href={`/attack-timeline?hostname=${encodeURIComponent(r.hostname)}`}
+                    className="text-xs bg-gray-800 hover:bg-indigo-600 text-gray-300 hover:text-white px-2.5 py-1 rounded transition-colors inline-block"
+                  >
+                    View Timeline
+                  </Link>
+                </div>
               )},
             ]}
           />
