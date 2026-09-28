@@ -46,7 +46,16 @@ export default function HostsPage() {
             keyExtractor={(r) => r.id}
             columns={[
               { key: 'hostname', title: 'Hostname', render: (r) => <span className="font-medium text-gray-200">{r.hostname}</span> },
-              { key: 'ip_address', title: 'Primary IP', render: (r) => r.ip_address || '-' },
+              { key: 'ip_address', title: 'Primary IP', render: (r) => (
+                r.ip_address ? (
+                  <Link
+                    href={`/ip-investigation?ip=${encodeURIComponent(r.ip_address)}`}
+                    className="text-blue-400 hover:text-blue-300 hover:underline font-mono"
+                  >
+                    {r.ip_address}
+                  </Link>
+                ) : '-'
+              )},
               { key: 'operating_system', title: 'OS', render: (r) => <span className="capitalize">{r.operating_system}</span> },
               { key: 'agents_count', title: 'Agents', render: (r) => (
                 <div className="flex space-x-1">

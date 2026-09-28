@@ -1,4 +1,5 @@
 import { useState } from "react";
+import Link from "next/link";
 import { SeverityBadge } from "./SeverityBadge";
 import { AddToInvestigationModal } from "./AddToInvestigationModal";
 
@@ -87,7 +88,17 @@ export function EventDetailsModal({ event, onClose }: { event: any, onClose: () 
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div>
                   <p className="text-xs text-gray-500 uppercase">Source IP</p>
-                  <p className="text-sm text-gray-200">{event.source_ip || 'N/A'}</p>
+                  {event.source_ip ? (
+                    <Link
+                      href={`/ip-investigation?ip=${encodeURIComponent(event.source_ip)}`}
+                      onClick={onClose}
+                      className="text-sm text-blue-400 hover:text-blue-300 hover:underline font-mono"
+                    >
+                      {event.source_ip}
+                    </Link>
+                  ) : (
+                    <p className="text-sm text-gray-400">N/A</p>
+                  )}
                 </div>
                 <div>
                   <p className="text-xs text-gray-500 uppercase">Source Port</p>
@@ -95,7 +106,17 @@ export function EventDetailsModal({ event, onClose }: { event: any, onClose: () 
                 </div>
                 <div>
                   <p className="text-xs text-gray-500 uppercase">Destination IP</p>
-                  <p className="text-sm text-gray-200">{event.destination_ip || 'N/A'}</p>
+                  {event.destination_ip ? (
+                    <Link
+                      href={`/ip-investigation?ip=${encodeURIComponent(event.destination_ip)}`}
+                      onClick={onClose}
+                      className="text-sm text-blue-400 hover:text-blue-300 hover:underline font-mono"
+                    >
+                      {event.destination_ip}
+                    </Link>
+                  ) : (
+                    <p className="text-sm text-gray-400">N/A</p>
+                  )}
                 </div>
                 <div>
                   <p className="text-xs text-gray-500 uppercase">Destination Port</p>

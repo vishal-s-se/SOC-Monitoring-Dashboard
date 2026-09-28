@@ -107,6 +107,7 @@ function AttackTimelineContent() {
 
   // URL state reading
   const searchParam = searchParams.get('search') || ''
+  const ipParam = searchParams.get('ip') || ''
   const hostParam = searchParams.get('hostname') || ''
   const agentParam = searchParams.get('agent_id') || ''
   const userParam = searchParams.get('username') || ''
@@ -151,7 +152,7 @@ function AttackTimelineContent() {
   const [destinationIp, setDestinationIp] = useState(dstIpParam)
   const [eventCategory, setEventCategory] = useState(catParam)
   const [severity, setSeverity] = useState(sevParam)
-  const [search, setSearch] = useState(searchParam)
+  const [search, setSearch] = useState(searchParam || ipParam)
 
   // MITRE Filters (Phase 7E-4)
   const [mitreOnly, setMitreOnly] = useState(mitreOnlyParam)

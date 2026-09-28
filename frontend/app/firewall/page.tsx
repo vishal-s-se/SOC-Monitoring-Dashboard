@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState, useCallback } from 'react'
+import Link from 'next/link'
 import { api } from '@/lib/api'
 import { Card, CardContent } from '@/components/ui/Card'
 import { PageHeader, LoadingState, ErrorState, EmptyState } from '@/components/ui/States'
@@ -160,9 +161,29 @@ export default function FirewallPage() {
                   </span>
                 )},
                 { key: 'protocol', title: 'Proto', render: (r) => r.protocol || 'N/A' },
-                { key: 'source_ip', title: 'Source IP', render: (r) => r.source_ip || 'N/A' },
+                { key: 'source_ip', title: 'Source IP', render: (r) => (
+                  r.source_ip ? (
+                    <Link
+                      href={`/ip-investigation?ip=${encodeURIComponent(r.source_ip)}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="text-blue-400 hover:text-blue-300 hover:underline font-mono"
+                    >
+                      {r.source_ip}
+                    </Link>
+                  ) : 'N/A'
+                )},
                 { key: 'source_port', title: 'S.Port', render: (r) => r.source_port || 'N/A' },
-                { key: 'destination_ip', title: 'Dest IP', render: (r) => r.destination_ip || 'N/A' },
+                { key: 'destination_ip', title: 'Dest IP', render: (r) => (
+                  r.destination_ip ? (
+                    <Link
+                      href={`/ip-investigation?ip=${encodeURIComponent(r.destination_ip)}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="text-blue-400 hover:text-blue-300 hover:underline font-mono"
+                    >
+                      {r.destination_ip}
+                    </Link>
+                  ) : 'N/A'
+                )},
                 { key: 'destination_port', title: 'D.Port', render: (r) => r.destination_port || 'N/A' },
                 { key: 'hostname', title: 'Host', render: (r) => r.hostname || 'N/A' },
                 { key: 'severity', title: 'Severity', render: (r) => <SeverityBadge severity={r.severity || 'INFO'} /> }

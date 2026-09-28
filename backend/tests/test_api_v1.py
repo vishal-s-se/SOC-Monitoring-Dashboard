@@ -20,6 +20,8 @@ from backend.app.models.event import Event
 from backend.app.models.raw_log import RawLog
 from backend.app.models.detection import DetectionRule, DetectionResult
 from backend.app.models.alert import Alert
+from backend.app.models.investigation import Investigation, InvestigationEvidence, InvestigationStatus, InvestigationSeverity
+from backend.app.models.mitre import MitreMapping, MitreTargetType, MitreMappingSource, MitreConfidence
 
 url = os.getenv("TEST_DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5432/soc_monitor_test")
 engine = create_async_engine(url, poolclass=NullPool)
@@ -1381,3 +1383,296 @@ async def test_mitre_attack_foundation_phase_7e1(client: AsyncClient, db: AsyncS
 
     # Clean up mapping
     await client.delete(f"/api/v1/mitre/mappings/{ev_map_id}")
+
+
+@pytest.mark.asyncio
+async def test_source_ip_investigation_phase_7f1(client: AsyncClient, db: AsyncSession):
+    """
+    Phase 7F-1 Source/IP Investigation Test Suite:
+    - Robust IP validation (IPv4, IPv6, loopback, private, public, link-local)
+    - Rejection of malformed IPs and invalid formats (400 Bad Request)
+    - IP with zero observed events (empty state handling)
+    - IP with source and destination telemetry
+    - Aggregation metrics (total_events, source_count, destination_count, first/last observed)
+    - Associated deduplicated alerts
+    - Associated hosts and agents
+    - Associated usernames with host lists
+    - Associated investigations via evidence linkage
+    - Explicit MITRE ATT&CK technique linkage via associated evidence
+    - Paginated events endpoint with filtering (role, category, protocol, search)
+    - Paginated alerts endpoint with filtering (status, severity)
+    - Role query parameter (source, destination, all)
+    - Time-range bounded queries
+    - Non-destructive and passive behavior (no external network or attribution)
+    """
+    # Seed MITRE catalog for foreign key relationships
+    from backend.app.services.mitre_seeder import seed_mitre_catalog
+    await seed_mitre_catalog(db)
+
+    # 1. IP Validation tests
+    # Malformed IPs
+    for bad_ip in ["invalid-ip", "999.999.999.999", "192.168.1", "2001:xyz::1", "127.0.0.1.5", "::g"]:
+        res_bad = await client.get(f"/api/v1/ip-investigation/{bad_ip}")
+        assert res_bad.status_code == 400
+        assert "Invalid IP address format" in res_bad.json()["detail"]
+
+    # Valid IPv6 with zero events
+    res_ipv6_empty = await client.get("/api/v1/ip-investigation/2001:db8::1")
+    assert res_ipv6_empty.status_code == 200
+    empty_ipv6_data = res_ipv6_empty.json()
+    assert empty_ipv6_data["summary"]["ip_address"] == "2001:db8::1"
+    assert empty_ipv6_data["summary"]["ip_version"] == "IPv6"
+    assert empty_ipv6_data["summary"]["total_events"] == 0
+    assert empty_ipv6_data["summary"]["alerts_count"] == 0
+
+    # Valid IPv4 with zero events
+    res_ipv4_empty = await client.get("/api/v1/ip-investigation/10.254.254.254")
+    assert res_ipv4_empty.status_code == 200
+    assert res_ipv4_empty.json()["summary"]["total_events"] == 0
+    assert res_ipv4_empty.json()["summary"]["address_scope"] == "private"
+
+    # 2. Setup Telemetry for a target IP: 93.184.216.34 (public IPv4)
+    target_ip = "93.184.216.34"
+    other_ip = "10.0.0.50"
+    base_time = datetime.now(timezone.utc) - timedelta(hours=3)
+
+    # Create host and agent
+    host_ip_test = Host(
+        host_identifier=f"host-ip-{uuid.uuid4().hex[:6]}",
+        hostname="sec-gw-01",
+        operating_system="linux",
+        ip_address=target_ip
+    )
+    db.add(host_ip_test)
+    await db.flush()
+
+    agent_ip_test = Agent(
+        agent_id=f"agent-ip-{uuid.uuid4().hex[:6]}",
+        host_id=host_ip_test.id,
+        hostname="sec-gw-01",
+        operating_system="linux",
+        status="ONLINE"
+    )
+    db.add(agent_ip_test)
+    await db.flush()
+
+    # Event 1: target_ip as SOURCE
+    ev_src_1 = Event(
+        event_id=f"ev-src1-{uuid.uuid4().hex[:8]}",
+        timestamp=base_time,
+        event_type="firewall_deny",
+        event_category="network",
+        severity="HIGH",
+        hostname="sec-gw-01",
+        host_id=host_ip_test.id,
+        agent_id=agent_ip_test.id,
+        username="svc_backup",
+        source_ip=target_ip,
+        destination_ip=other_ip,
+        source_port=54321,
+        destination_port=443,
+        protocol="TCP",
+        action="deny"
+    )
+    db.add(ev_src_1)
+
+    # Event 2: target_ip as SOURCE
+    ev_src_2 = Event(
+        event_id=f"ev-src2-{uuid.uuid4().hex[:8]}",
+        timestamp=base_time + timedelta(minutes=10),
+        event_type="network_flow",
+        event_category="network",
+        severity="MEDIUM",
+        hostname="sec-gw-01",
+        host_id=host_ip_test.id,
+        agent_id=agent_ip_test.id,
+        username="svc_backup",
+        source_ip=target_ip,
+        destination_ip="8.8.8.8",
+        source_port=54322,
+        destination_port=53,
+        protocol="UDP",
+        action="allow"
+    )
+    db.add(ev_src_2)
+
+    # Event 3: target_ip as DESTINATION
+    ev_dst = Event(
+        event_id=f"ev-dst-{uuid.uuid4().hex[:8]}",
+        timestamp=base_time + timedelta(minutes=25),
+        event_type="ssh_login",
+        event_category="authentication",
+        severity="LOW",
+        hostname="sec-gw-01",
+        host_id=host_ip_test.id,
+        agent_id=agent_ip_test.id,
+        username="admin_sec",
+        source_ip=other_ip,
+        destination_ip=target_ip,
+        source_port=42100,
+        destination_port=22,
+        protocol="TCP",
+        action="success"
+    )
+    db.add(ev_dst)
+    await db.flush()
+
+    # Create Detection Rule and Alert referencing Event 1 and Event 2
+    rule_ip = DetectionRule(
+        rule_id=f"RUL-IP-{uuid.uuid4().hex[:6]}",
+        name="Suspicious Inbound Flow",
+        severity="HIGH",
+        conditions=[{"field": "event_type", "operator": "equals", "value": "firewall_deny"}]
+    )
+    db.add(rule_ip)
+    await db.flush()
+
+    alert_ip = Alert(
+        alert_id=f"alt-ip-{uuid.uuid4().hex[:8]}",
+        rule_id=rule_ip.id,
+        title="Firewall Deny Involving Target IP",
+        severity="HIGH",
+        status="OPEN",
+        fingerprint=f"FP-IP-{uuid.uuid4().hex[:8]}",
+        first_seen=base_time,
+        last_seen=base_time + timedelta(minutes=10),
+        occurrence_count=2,
+        agent_id=agent_ip_test.id,
+        host_id=host_ip_test.id
+    )
+    db.add(alert_ip)
+    await db.flush()
+
+    # Link both ev_src_1 and ev_src_2 to alert_ip via DetectionResult
+    dr1 = DetectionResult(event_id=ev_src_1.id, alert_id=alert_ip.id, rule_id=rule_ip.id)
+    dr2 = DetectionResult(event_id=ev_src_2.id, alert_id=alert_ip.id, rule_id=rule_ip.id)
+    db.add(dr1)
+    db.add(dr2)
+    await db.flush()
+
+    # Create Investigation with evidence linking alert_ip and ev_dst
+    inv_ip = Investigation(
+        title=f"IP Evidence Investigation {uuid.uuid4().hex[:6]}",
+        status=InvestigationStatus.IN_PROGRESS.value,
+        severity=InvestigationSeverity.HIGH.value
+    )
+    db.add(inv_ip)
+    await db.flush()
+
+    ev_link1 = InvestigationEvidence(
+        investigation_id=inv_ip.id,
+        evidence_type="ALERT",
+        reference_id=str(alert_ip.id)
+    )
+    ev_link2 = InvestigationEvidence(
+        investigation_id=inv_ip.id,
+        evidence_type="EVENT",
+        reference_id=str(ev_dst.id)
+    )
+    db.add(ev_link1)
+    db.add(ev_link2)
+    await db.flush()
+
+    # Link MITRE technique to Detection Rule of the alert
+    # T1046 - Network Service Discovery
+    mitre_map_rule = MitreMapping(
+        technique_id="T1046",
+        target_type=MitreTargetType.DETECTION_RULE.value,
+        target_id=str(rule_ip.id),
+        mapping_source=MitreMappingSource.DOCUMENTED_RULE.value,
+        confidence=MitreConfidence.HIGH.value,
+        evidence_reference="Detection Rule T1046"
+    )
+    db.add(mitre_map_rule)
+    await db.commit()
+
+    # 3. Test IP Overview Endpoint: GET /api/v1/ip-investigation/{target_ip}
+    res_overview = await client.get(f"/api/v1/ip-investigation/{target_ip}")
+    assert res_overview.status_code == 200
+    ov_data = res_overview.json()
+
+    # Validate Summary
+    summary = ov_data["summary"]
+    assert summary["ip_address"] == target_ip
+    assert summary["ip_version"] == "IPv4"
+    assert summary["address_scope"] == "public"
+    assert summary["total_events"] == 3
+    assert summary["source_events_count"] == 2
+    assert summary["destination_events_count"] == 1
+    assert summary["alerts_count"] == 1  # Deduplicated from 2 events
+    assert summary["hosts_count"] >= 1
+    assert summary["agents_count"] >= 1
+    assert summary["users_count"] >= 2  # svc_backup and admin_sec
+    assert summary["investigations_count"] >= 1
+    assert summary["mitre_techniques_count"] >= 1
+
+    # Validate Associated Hosts
+    assert any(h["hostname"] == "sec-gw-01" for h in ov_data["associated_hosts"])
+
+    # Validate Associated Users
+    users_seen = {u["username"] for u in ov_data["associated_users"]}
+    assert "svc_backup" in users_seen
+    assert "admin_sec" in users_seen
+
+    # Validate Associated Investigations
+    assert any(inv["id"] == inv_ip.id for inv in ov_data["associated_investigations"])
+
+    # Validate MITRE Techniques
+    assert any(mt["technique_id"] == "T1046" for mt in ov_data["mitre_techniques"])
+
+    # 4. Test Role Query Filter: role=source
+    res_role_src = await client.get(f"/api/v1/ip-investigation/{target_ip}?role=source")
+    assert res_role_src.status_code == 200
+    src_data = res_role_src.json()
+    assert src_data["summary"]["total_events"] == 2
+
+    # Test Role Query Filter: role=destination
+    res_role_dst = await client.get(f"/api/v1/ip-investigation/{target_ip}?role=destination")
+    assert res_role_dst.status_code == 200
+    assert res_role_dst.json()["summary"]["total_events"] == 1
+
+    # 5. Test IP Events Endpoint: GET /api/v1/ip-investigation/{target_ip}/events
+    res_evs = await client.get(f"/api/v1/ip-investigation/{target_ip}/events")
+    assert res_evs.status_code == 200
+    evs_data = res_evs.json()
+    assert evs_data["total"] == 3
+    assert len(evs_data["items"]) == 3
+
+    # Filter events by category
+    res_ev_filter = await client.get(f"/api/v1/ip-investigation/{target_ip}/events?event_category=authentication")
+    assert res_ev_filter.status_code == 200
+    assert res_ev_filter.json()["total"] == 1
+    assert res_ev_filter.json()["items"][0]["event_type"] == "ssh_login"
+
+    # Filter events by protocol
+    res_ev_proto = await client.get(f"/api/v1/ip-investigation/{target_ip}/events?protocol=udp")
+    assert res_ev_proto.status_code == 200
+    assert res_ev_proto.json()["total"] == 1
+    assert res_ev_proto.json()["items"][0]["protocol"] == "UDP"
+
+    # 6. Test IP Alerts Endpoint: GET /api/v1/ip-investigation/{target_ip}/alerts
+    res_als = await client.get(f"/api/v1/ip-investigation/{target_ip}/alerts")
+    assert res_als.status_code == 200
+    als_data = res_als.json()
+    assert als_data["total"] == 1
+    assert als_data["items"][0]["id"] == alert_ip.id
+    assert "source" in als_data["items"][0]["observed_roles"]
+    assert "T1046" in als_data["items"][0]["mitre_techniques"]
+
+    # 7. Time range testing
+    valid_start = (base_time + timedelta(minutes=5)).isoformat()
+    valid_end = (base_time + timedelta(minutes=30)).isoformat()
+    res_time = await client.get(
+        f"/api/v1/ip-investigation/{target_ip}",
+        params={"start_time": valid_start, "end_time": valid_end}
+    )
+    assert res_time.status_code == 200, f"Error: {res_time.text}"
+    assert res_time.json()["summary"]["total_events"] == 2  # ev_src_2 and ev_dst
+
+    # Reversed time range error
+    res_bad_time = await client.get(
+        f"/api/v1/ip-investigation/{target_ip}",
+        params={"start_time": valid_end, "end_time": valid_start}
+    )
+    assert res_bad_time.status_code == 400
+

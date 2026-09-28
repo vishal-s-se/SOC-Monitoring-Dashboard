@@ -10,7 +10,8 @@ from backend.app.api.v1.endpoints import (
     detections,
     ws,
     timeline,
-    mitre
+    mitre,
+    ip_investigation
 )
 
 api_router = APIRouter()
@@ -25,3 +26,4 @@ api_router.include_router(ws.router, prefix="/ws", tags=["websocket"])
 api_router.include_router(investigations.router, prefix="/investigations", tags=["investigations"])
 api_router.include_router(timeline.router, prefix="/attack-timeline", tags=["attack-timeline"])
 api_router.include_router(mitre.router, prefix="/mitre", tags=["mitre"])
+api_router.include_router(ip_investigation.router, prefix="/ip-investigation", tags=["ip-investigation"])

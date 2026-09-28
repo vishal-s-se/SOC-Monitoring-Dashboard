@@ -855,7 +855,17 @@ export default function InvestigationDetailPage() {
                             <StatusBadge status={item.data.status || 'UNKNOWN'} />
                           </div>
                           <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 mt-1 text-xs text-gray-500">
-                            {item.data.ip_address && <span>IP: <span className="text-gray-300">{item.data.ip_address}</span></span>}
+                            {item.data.ip_address && (
+                              <span>
+                                IP:{' '}
+                                <Link
+                                  href={`/ip-investigation?ip=${encodeURIComponent(item.data.ip_address)}`}
+                                  className="text-blue-400 hover:underline font-mono"
+                                >
+                                  {item.data.ip_address}
+                                </Link>
+                              </span>
+                            )}
                             {item.data.operating_system && <span>OS: <span className="text-gray-300">{item.data.operating_system}</span></span>}
                             {item.data.os_version && <span>Version: <span className="text-gray-300">{item.data.os_version}</span></span>}
                             {item.data.last_seen && <span>Last seen: <span className="text-gray-300">{new Date(item.data.last_seen).toLocaleString()}</span></span>}
@@ -891,7 +901,17 @@ export default function InvestigationDetailPage() {
                             {item.data.hostname && <span>Host: <span className="text-gray-300">{item.data.hostname}</span></span>}
                             {item.data.operating_system && <span>OS: <span className="text-gray-300">{item.data.operating_system}</span></span>}
                             {item.data.agent_version && <span>Version: <span className="text-gray-300">{item.data.agent_version}</span></span>}
-                            {item.data.ip_address && <span>IP: <span className="text-gray-300">{item.data.ip_address}</span></span>}
+                            {item.data.ip_address && (
+                              <span>
+                                IP:{' '}
+                                <Link
+                                  href={`/ip-investigation?ip=${encodeURIComponent(item.data.ip_address)}`}
+                                  className="text-blue-400 hover:underline font-mono"
+                                >
+                                  {item.data.ip_address}
+                                </Link>
+                              </span>
+                            )}
                             {item.data.last_heartbeat && <span>Last heartbeat: <span className="text-gray-300">{new Date(item.data.last_heartbeat).toLocaleString()}</span></span>}
                           </div>
                         </div>
