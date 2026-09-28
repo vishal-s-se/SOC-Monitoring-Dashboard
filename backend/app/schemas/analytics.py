@@ -70,3 +70,58 @@ class BehaviorCorrelationResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
+from typing import Dict, Any
+
+class MetricOverviewResponse(BaseModel):
+    time_range: str
+    events_received: int
+    alerts_open: int
+    alerts_resolved: int
+    investigations_active: int
+    behavioral_deviations: int
+    generated_at: datetime
+
+class MetricTimeSeriesPoint(BaseModel):
+    timestamp: datetime
+    count: int
+
+class MetricTimeSeriesResponse(BaseModel):
+    metric_name: str
+    interval: str
+    data: List[MetricTimeSeriesPoint]
+    
+class MetricRuleMatch(BaseModel):
+    rule_name: str
+    match_count: int
+    severity: str
+
+class MetricDetectionsResponse(BaseModel):
+    total_evaluations: int
+    total_matches: int
+    rule_matches: List[MetricRuleMatch]
+
+class MetricTelemetryResponse(BaseModel):
+    total_events: int
+    by_category: Dict[str, int]
+    by_severity: Dict[str, int]
+
+class MetricAlertsResponse(BaseModel):
+    total_alerts: int
+    by_severity: Dict[str, int]
+    by_status: Dict[str, int]
+
+class MetricInvestigationsResponse(BaseModel):
+    total_investigations: int
+    by_status: Dict[str, int]
+    by_severity: Dict[str, int]
+
+class MetricAgentHealthResponse(BaseModel):
+    total_agents: int
+    online_agents: int
+    offline_agents: int
+
+class MetricMitreResponse(BaseModel):
+    mapped_events: int
+    mapped_alerts: int
+    by_tactic: Dict[str, int]

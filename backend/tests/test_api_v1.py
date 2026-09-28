@@ -2424,3 +2424,26 @@ async def test_cross_entity_correlation_phase_8b(client: AsyncClient, db: AsyncS
     assert data2[0]["relationship_reason"] == "User executed commands during deviation"
 
 
+
+@pytest.mark.asyncio
+async def test_metrics_endpoints_phase_8c(client: AsyncClient, db: AsyncSession):
+    # GET /overview
+    res = await client.get("/api/v1/analytics/overview?hours=24")
+    assert res.status_code == 200
+    data = res.json()
+    assert "events_received" in data
+    assert "alerts_open" in data
+    assert "behavioral_deviations" in data
+
+    # GET /timeseries
+    res_ts = await client.get("/api/v1/analytics/timeseries?metric=events&hours=24")
+    assert res_ts.status_code == 200
+    data_ts = res_ts.json()
+    assert "data" in data_ts
+    assert data_ts["metric_name"] == "events"
+
+    # GET /detections
+    res_det = await client.get("/api/v1/analytics/detections?hours=24")
+    assert res_det.status_code == 200
+    data_det = res_det.json()
+    assert "rule_matches" in data_det
