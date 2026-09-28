@@ -12,10 +12,23 @@ import { Pagination } from '@/components/ui/Pagination'
 import { EventDetailsModal } from '@/components/ui/EventDetailsModal'
 import { AlertDetailsModal } from '@/components/ui/AlertDetailsModal'
 import { RawLogDetailsModal } from '@/components/ui/RawLogDetailsModal'
+import { MitreTechniqueDetailsModal } from '@/components/ui/MitreTechniqueDetailsModal'
 import { useWebSocket } from '@/hooks/useWebSocket'
 
 type TimePreset = '15m' | '30m' | '1h' | '6h' | '24h' | 'all' | 'custom'
-type GroupByOption = 'none' | 'host' | 'category' | 'severity' | 'provenance'
+type GroupByOption = 'none' | 'host' | 'category' | 'severity' | 'provenance' | 'tactic' | 'technique'
+
+interface MitreTechniqueMapping {
+  technique_id: string
+  name: string
+  tactics?: Array<{ tactic_id: string; name: string }>
+  is_subtechnique?: boolean
+  parent_technique_id?: string
+  source?: string
+  confidence?: string
+  evidence_reference?: string
+  relationship?: string
+}
 
 interface TimelineItem {
   id: number
@@ -51,7 +64,7 @@ interface TimelineItem {
   investigation_status?: string
   related_event_count?: number
   related_event_ids?: number[]
-  mitre_techniques?: any[]
+  mitre_techniques?: MitreTechniqueMapping[]
   metadata_?: any
 }
 
@@ -78,6 +91,11 @@ interface SummaryMetrics {
   unique_destination_ips: string[]
   unique_event_categories?: string[]
   unique_event_types?: string[]
+  mitre_events_count?: number
+  mitre_techniques_count?: number
+  mitre_tactics_count?: number
+  analyst_confirmed_count?: number
+  documented_rules_count?: number
 }
 
 function AttackTimelineContent() {
@@ -101,6 +119,11 @@ function AttackTimelineContent() {
   const orderParam = (searchParams.get('order') as 'desc' | 'asc') || 'desc'
   const pageParam = Math.max(1, Number(searchParams.get('page')) || 1)
   const pageSizeParam = Number(searchParams.get('page_size')) || 50
+  const mitreOnlyParam = searchParams.get('mitre_only') === 'true'
+  const techParam = searchParams.get('technique_id') || ''
+  const tacParam = searchParams.get('tactic_id') || ''
+  const mitreSrcParam = searchParams.get('mitre_source') || ''
+  const mitreConfParam = searchParams.get('mitre_confidence') || ''
 
   const [items, setItems] = useState<TimelineItem[]>([])
   const [investigationInfo, setInvestigationInfo] = useState<InvestigationInfo | null>(null)
@@ -130,15 +153,39 @@ function AttackTimelineContent() {
   const [severity, setSeverity] = useState(sevParam)
   const [search, setSearch] = useState(searchParam)
 
+  // MITRE Filters (Phase 7E-4)
+  const [mitreOnly, setMitreOnly] = useState(mitreOnlyParam)
+  const [techniqueId, setTechniqueId] = useState(techParam)
+  const [tacticId, setTacticId] = useState(tacParam)
+  const [mitreSource, setMitreSource] = useState(mitreSrcParam)
+  const [mitreConfidence, setMitreConfidence] = useState(mitreConfParam)
+  const [tacticsCatalog, setTacticsCatalog] = useState<Array<{ tactic_id: string; name: string }>>([])
+
   // Modals
   const [selectedEvent, setSelectedEvent] = useState<any>(null)
   const [selectedAlert, setSelectedAlert] = useState<any>(null)
   const [selectedRawLog, setSelectedRawLog] = useState<any>(null)
+  const [selectedMitreTechnique, setSelectedMitreTechnique] = useState<any>(null)
   const [fetchingDetails, setFetchingDetails] = useState(false)
 
   // Live real-time
   const [isLive, setIsLive] = useState(true)
   const { lastMessage, status: wsStatus } = useWebSocket()
+
+  // Load Tactics for selector
+  useEffect(() => {
+    async function loadTactics() {
+      try {
+        const res = await api.get<any[]>('/mitre/tactics')
+        if (Array.isArray(res)) {
+          setTacticsCatalog(res)
+        }
+      } catch {
+        // Silently continue if catalog not seeded yet
+      }
+    }
+    loadTactics()
+  }, [])
 
   // URL State Synchronizer
   useEffect(() => {
@@ -161,6 +208,11 @@ function AttackTimelineContent() {
     if (order !== 'desc') params.set('order', order)
     if (page > 1) params.set('page', String(page))
     if (pageSize !== 50) params.set('page_size', String(pageSize))
+    if (mitreOnly) params.set('mitre_only', 'true')
+    if (techniqueId.trim()) params.set('technique_id', techniqueId.trim())
+    if (tacticId.trim()) params.set('tactic_id', tacticId.trim())
+    if (mitreSource.trim()) params.set('mitre_source', mitreSource.trim())
+    if (mitreConfidence.trim()) params.set('mitre_confidence', mitreConfidence.trim())
 
     const queryStr = params.toString()
     const newUrl = queryStr ? `/attack-timeline?${queryStr}` : '/attack-timeline'
@@ -182,7 +234,12 @@ function AttackTimelineContent() {
     customEnd,
     order,
     page,
-    pageSize
+    pageSize,
+    mitreOnly,
+    techniqueId,
+    tacticId,
+    mitreSource,
+    mitreConfidence
   ])
 
   const calculateTimeBounds = useCallback((preset: TimePreset): { start?: string; end?: string } => {
@@ -231,6 +288,11 @@ function AttackTimelineContent() {
       if (eventCategory.trim()) query.event_category = eventCategory.trim()
       if (severity.trim()) query.severity = severity.trim()
       if (search.trim()) query.search = search.trim()
+      if (mitreOnly) query.mitre_only = true
+      if (techniqueId.trim()) query.technique_id = techniqueId.trim()
+      if (tacticId.trim()) query.tactic_id = tacticId.trim()
+      if (mitreSource.trim()) query.mitre_source = mitreSource.trim()
+      if (mitreConfidence.trim()) query.mitre_confidence = mitreConfidence.trim()
 
       const res = await api.get<any>('/attack-timeline', query)
       setItems(res.items || [])
@@ -269,18 +331,41 @@ function AttackTimelineContent() {
     destinationIp,
     eventCategory,
     severity,
-    search
+    search,
+    mitreOnly,
+    techniqueId,
+    tacticId,
+    mitreSource,
+    mitreConfidence
   ])
 
   useEffect(() => {
     fetchTimeline()
   }, [fetchTimeline])
 
-  // WebSocket Live Updates (with strict filter matching)
+  // WebSocket Live Updates (with strict filter matching & MITRE mapping refresh)
   useEffect(() => {
-    if (!isLive || !lastMessage || lastMessage.type !== 'new_event') return
+    if (!isLive || !lastMessage) return
+
+    // Real-time MITRE mapping updates: refresh timeline to re-evaluate MITRE filters & enriched techniques
+    if (
+      lastMessage.type === 'mitre_mapping_created' ||
+      lastMessage.type === 'mitre_mapping_deleted' ||
+      lastMessage.type === 'timeline_mitre_mapping_updated'
+    ) {
+      fetchTimeline()
+      return
+    }
+
+    if (lastMessage.type !== 'new_event') return
     const incoming = lastMessage.data
     if (!incoming || !incoming.event_id) return
+
+    // If MITRE-only filter or specific technique/tactic filter is active, skip unmapped new events from live append
+    // (a full fetch will capture them if mapped)
+    if (mitreOnly || techniqueId || tacticId || mitreSource || mitreConfidence) {
+      return
+    }
 
     setItems(prev => {
       // 1. Prevent duplicates
@@ -422,8 +507,14 @@ function AttackTimelineContent() {
     eventCategory,
     severity,
     search,
+    mitreOnly,
+    techniqueId,
+    tacticId,
+    mitreSource,
+    mitreConfidence,
     timePreset,
-    calculateTimeBounds
+    calculateTimeBounds,
+    fetchTimeline
   ])
 
   const toggleExpand = (id: number) => {
@@ -489,6 +580,11 @@ function AttackTimelineContent() {
     setCustomEnd('')
     setOrder('desc')
     setGroupBy('none')
+    setMitreOnly(false)
+    setTechniqueId('')
+    setTacticId('')
+    setMitreSource('')
+    setMitreConfidence('')
     setPage(1)
 
     // Context preservation in URL
@@ -509,25 +605,64 @@ function AttackTimelineContent() {
 
     const groups: Record<string, TimelineItem[]> = {}
     items.forEach(item => {
-      let key = 'Other'
       if (groupBy === 'host') {
-        key = item.hostname || 'Unknown Host'
+        const key = item.hostname || 'Unknown Host'
+        if (!groups[key]) groups[key] = []
+        groups[key].push(item)
       } else if (groupBy === 'category') {
-        key = item.event_category || 'Uncategorized'
+        const key = item.event_category || 'Uncategorized'
+        if (!groups[key]) groups[key] = []
+        groups[key].push(item)
       } else if (groupBy === 'severity') {
-        key = item.severity || 'INFO'
+        const key = item.severity || 'INFO'
+        if (!groups[key]) groups[key] = []
+        groups[key].push(item)
       } else if (groupBy === 'provenance') {
-        key = item.provenance === 'DIRECT_EVIDENCE'
+        const key = item.provenance === 'DIRECT_EVIDENCE'
           ? 'Direct Evidence'
           : item.provenance === 'CORRELATED_EVENT'
           ? 'Correlated Context'
           : item.provenance === 'ALERT_CONTEXT'
           ? 'Alert Trigger'
           : 'Other Events'
+        if (!groups[key]) groups[key] = []
+        groups[key].push(item)
+      } else if (groupBy === 'tactic') {
+        if (item.mitre_techniques && item.mitre_techniques.length > 0) {
+          const tacticsFound: string[] = []
+          item.mitre_techniques.forEach(mt => {
+            if (mt.tactics && mt.tactics.length > 0) {
+              mt.tactics.forEach(tac => tacticsFound.push(`${tac.tactic_id}: ${tac.name}`))
+            }
+          })
+          if (tacticsFound.length > 0) {
+            Array.from(new Set(tacticsFound)).forEach(tacKey => {
+              if (!groups[tacKey]) groups[tacKey] = []
+              groups[tacKey].push(item)
+            })
+          } else {
+            const key = 'Unmapped Tactics'
+            if (!groups[key]) groups[key] = []
+            groups[key].push(item)
+          }
+        } else {
+          const key = 'No MITRE Mapping'
+          if (!groups[key]) groups[key] = []
+          groups[key].push(item)
+        }
+      } else if (groupBy === 'technique') {
+        if (item.mitre_techniques && item.mitre_techniques.length > 0) {
+          item.mitre_techniques.forEach(mt => {
+            const key = `${mt.technique_id} - ${mt.name}`
+            if (!groups[key]) groups[key] = []
+            groups[key].push(item)
+          })
+        } else {
+          const key = 'No MITRE Mapping'
+          if (!groups[key]) groups[key] = []
+          groups[key].push(item)
+        }
       }
-
-      if (!groups[key]) groups[key] = []
-      groups[key].push(item)
     })
 
     return Object.entries(groups).map(([groupTitle, groupItems]) => ({
@@ -729,6 +864,32 @@ function AttackTimelineContent() {
             </div>
           </div>
 
+          {/* MITRE Summary Sub-bar */}
+          {(summaryMetrics.mitre_events_count !== undefined && summaryMetrics.mitre_events_count > 0) && (
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-2 border-t border-gray-800/60 text-xs">
+              <div className="bg-red-950/30 p-2 rounded border border-red-900/40">
+                <span className="text-[10px] text-red-400 block uppercase font-semibold">ATT&CK Events</span>
+                <span className="text-sm font-bold text-red-300">{summaryMetrics.mitre_events_count}</span>
+              </div>
+              <div className="bg-red-950/30 p-2 rounded border border-red-900/40">
+                <span className="text-[10px] text-red-400 block uppercase font-semibold">Techniques</span>
+                <span className="text-sm font-bold text-red-300">{summaryMetrics.mitre_techniques_count || 0}</span>
+              </div>
+              <div className="bg-red-950/30 p-2 rounded border border-red-900/40">
+                <span className="text-[10px] text-red-400 block uppercase font-semibold">Tactics</span>
+                <span className="text-sm font-bold text-red-300">{summaryMetrics.mitre_tactics_count || 0}</span>
+              </div>
+              <div className="bg-red-950/30 p-2 rounded border border-red-900/40">
+                <span className="text-[10px] text-emerald-400 block uppercase font-semibold">Analyst Confirmed</span>
+                <span className="text-sm font-bold text-emerald-300">{summaryMetrics.analyst_confirmed_count || 0}</span>
+              </div>
+              <div className="bg-red-950/30 p-2 rounded border border-red-900/40">
+                <span className="text-[10px] text-amber-400 block uppercase font-semibold">Documented Rules</span>
+                <span className="text-sm font-bold text-amber-300">{summaryMetrics.documented_rules_count || 0}</span>
+              </div>
+            </div>
+          )}
+
           {/* Quick Filter Context Pills */}
           <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
             {summaryMetrics.unique_hosts.length > 0 && (
@@ -836,6 +997,8 @@ function AttackTimelineContent() {
                   <option value="category">Category</option>
                   <option value="severity">Severity</option>
                   <option value="provenance">Provenance</option>
+                  <option value="tactic">MITRE ATT&CK Tactic</option>
+                  <option value="technique">MITRE ATT&CK Technique</option>
                 </select>
               </div>
 
@@ -892,6 +1055,24 @@ function AttackTimelineContent() {
                 </button>
               ))}
             </div>
+
+            {/* MITRE-Only Quick Toggle */}
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={() => {
+                  setMitreOnly(!mitreOnly)
+                  setPage(1)
+                }}
+                className={`px-3 py-1 rounded text-xs font-semibold flex items-center space-x-1.5 border transition-colors ${
+                  mitreOnly
+                    ? 'bg-red-900/60 border-red-600 text-red-200'
+                    : 'bg-gray-900 border-gray-800 text-gray-400 hover:text-white'
+                }`}
+              >
+                <span className="w-2 h-2 rounded-full bg-red-400" />
+                <span>MITRE ATT&CK Mapped Only</span>
+              </button>
+            </div>
           </div>
 
           {/* Custom Date Inputs */}
@@ -935,7 +1116,7 @@ function AttackTimelineContent() {
                   setSearch(e.target.value)
                   setPage(1)
                 }}
-                placeholder="User, host, IP, event type/ID..."
+                placeholder="User, host, IP, event type, ATT&CK Txxxx..."
                 className="w-full bg-[#151518] border border-gray-800 rounded p-1.5 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-blue-500"
               />
             </div>
@@ -1096,6 +1277,78 @@ function AttackTimelineContent() {
               </select>
             </div>
 
+            {/* MITRE Technique Filter */}
+            <div>
+              <label className="block text-[11px] text-red-400 font-semibold mb-1">MITRE Technique</label>
+              <input
+                type="text"
+                value={techniqueId}
+                onChange={e => {
+                  setTechniqueId(e.target.value.toUpperCase())
+                  setPage(1)
+                }}
+                placeholder="e.g. T1059"
+                className="w-full bg-[#1c1417] border border-red-900/60 rounded p-1.5 text-xs text-red-200 placeholder-gray-600 font-mono focus:outline-none focus:border-red-500"
+              />
+            </div>
+
+            {/* MITRE Tactic Selector */}
+            <div>
+              <label className="block text-[11px] text-red-400 font-semibold mb-1">ATT&CK Tactic</label>
+              <select
+                value={tacticId}
+                onChange={e => {
+                  setTacticId(e.target.value)
+                  setPage(1)
+                }}
+                className="w-full bg-[#1c1417] border border-red-900/60 rounded p-1.5 text-xs text-red-200 focus:outline-none focus:border-red-500"
+              >
+                <option value="">All Tactics</option>
+                {tacticsCatalog.map(tac => (
+                  <option key={tac.tactic_id} value={tac.tactic_id}>
+                    {tac.tactic_id} - {tac.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* MITRE Source Filter */}
+            <div>
+              <label className="block text-[11px] text-gray-400 font-semibold mb-1">Mapping Source</label>
+              <select
+                value={mitreSource}
+                onChange={e => {
+                  setMitreSource(e.target.value)
+                  setPage(1)
+                }}
+                className="w-full bg-[#151518] border border-gray-800 rounded p-1.5 text-xs text-white focus:outline-none"
+              >
+                <option value="">All Sources</option>
+                <option value="ANALYST_CONFIRMED">Analyst Confirmed</option>
+                <option value="DOCUMENTED_RULE">Documented Rule</option>
+                <option value="SYSTEM_DEFINED">System Defined</option>
+                <option value="IMPORTED">Imported</option>
+              </select>
+            </div>
+
+            {/* MITRE Confidence Filter */}
+            <div>
+              <label className="block text-[11px] text-gray-400 font-semibold mb-1">Confidence</label>
+              <select
+                value={mitreConfidence}
+                onChange={e => {
+                  setMitreConfidence(e.target.value)
+                  setPage(1)
+                }}
+                className="w-full bg-[#151518] border border-gray-800 rounded p-1.5 text-xs text-white focus:outline-none"
+              >
+                <option value="">All Confidence</option>
+                <option value="HIGH">HIGH</option>
+                <option value="MEDIUM">MEDIUM</option>
+                <option value="LOW">LOW</option>
+              </select>
+            </div>
+
             <div>
               <label className="block text-[11px] text-gray-400 font-semibold mb-1">Page Size</label>
               <select
@@ -1114,9 +1367,39 @@ function AttackTimelineContent() {
           </div>
 
           {/* Active Filter Chips */}
-          {(search || hostname || agentId || username || sourceIp || destinationIp || eventCategory || severity || provenanceFilter !== 'ALL' || timePreset === 'custom') && (
+          {(search || hostname || agentId || username || sourceIp || destinationIp || eventCategory || severity || provenanceFilter !== 'ALL' || timePreset === 'custom' || mitreOnly || techniqueId || tacticId || mitreSource || mitreConfidence) && (
             <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-gray-800/40 text-xs">
               <span className="text-[10px] uppercase font-semibold text-gray-500 mr-1">Active Filters:</span>
+              {mitreOnly && (
+                <span className="bg-red-950/80 border border-red-700/60 text-red-300 px-2 py-0.5 rounded-full flex items-center space-x-1">
+                  <span>ATT&CK Mapped Only</span>
+                  <button onClick={() => setMitreOnly(false)} className="hover:text-red-200">✕</button>
+                </span>
+              )}
+              {techniqueId && (
+                <span className="bg-red-950/80 border border-red-700/60 text-red-300 px-2 py-0.5 rounded-full flex items-center space-x-1 font-mono">
+                  <span>Technique: {techniqueId}</span>
+                  <button onClick={() => setTechniqueId('')} className="hover:text-red-200">✕</button>
+                </span>
+              )}
+              {tacticId && (
+                <span className="bg-red-950/80 border border-red-700/60 text-red-300 px-2 py-0.5 rounded-full flex items-center space-x-1 font-mono">
+                  <span>Tactic: {tacticId}</span>
+                  <button onClick={() => setTacticId('')} className="hover:text-red-200">✕</button>
+                </span>
+              )}
+              {mitreSource && (
+                <span className="bg-gray-800 text-gray-200 px-2 py-0.5 rounded-full flex items-center space-x-1">
+                  <span>Source: {mitreSource}</span>
+                  <button onClick={() => setMitreSource('')} className="hover:text-red-400">✕</button>
+                </span>
+              )}
+              {mitreConfidence && (
+                <span className="bg-gray-800 text-gray-200 px-2 py-0.5 rounded-full flex items-center space-x-1">
+                  <span>Conf: {mitreConfidence}</span>
+                  <button onClick={() => setMitreConfidence('')} className="hover:text-red-400">✕</button>
+                </span>
+              )}
               {search && (
                 <span className="bg-gray-800 text-gray-200 px-2 py-0.5 rounded-full flex items-center space-x-1">
                   <span>Search: &quot;{search}&quot;</span>
@@ -1308,14 +1591,27 @@ function AttackTimelineContent() {
                             <SeverityBadge severity={item.severity || 'INFO'} />
 
                             {item.mitre_techniques && item.mitre_techniques.map((mt: any) => (
-                              <span
+                              <button
                                 key={mt.technique_id}
-                                title={`${mt.name} (Source: ${mt.source}, Conf: ${mt.confidence})`}
-                                className="text-xs bg-red-950/80 border border-red-700/60 text-red-300 px-2 py-0.5 rounded font-mono font-bold flex items-center space-x-1"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setSelectedMitreTechnique({
+                                    technique_id: mt.technique_id,
+                                    name: mt.name,
+                                    is_subtechnique: mt.is_subtechnique,
+                                    parent_technique_id: mt.parent_technique_id,
+                                    tactics: mt.tactics || []
+                                  })
+                                }}
+                                title={`${mt.name} (Source: ${mt.source || 'N/A'}, Conf: ${mt.confidence || 'N/A'}, Rel: ${mt.relationship || 'Explicit'}) — Click for technique catalog details`}
+                                className="text-xs bg-red-950/80 hover:bg-red-900 border border-red-700/60 hover:border-red-500 text-red-200 px-2 py-0.5 rounded font-mono font-bold flex items-center space-x-1.5 transition-colors cursor-pointer"
                               >
-                                <span className="text-[10px] text-red-400">ATT&CK</span>
+                                <span className="text-[10px] text-red-400 font-semibold">ATT&CK</span>
                                 <span>{mt.technique_id}</span>
-                              </span>
+                                <span className="text-[11px] font-normal text-gray-300 max-w-[140px] truncate hidden md:inline">
+                                  {mt.name}
+                                </span>
+                              </button>
                             ))}
                           </div>
 
@@ -1627,31 +1923,95 @@ function AttackTimelineContent() {
                                   )}
                                 </div>
 
-                                {/* MITRE ATT&CK Mappings (Phase 7E-1) */}
+                                {/* MITRE ATT&CK Mappings (Phase 7E-4) */}
                                 {item.mitre_techniques && item.mitre_techniques.length > 0 && (
-                                  <div className="bg-red-950/20 p-2.5 rounded border border-red-900/40 sm:col-span-2 md:col-span-3">
-                                    <span className="text-red-400 block text-[10px] uppercase font-bold tracking-wider mb-1.5">
-                                      MITRE ATT&CK MAPPINGS (EXPLICIT EVIDENCE)
-                                    </span>
-                                    <div className="flex flex-wrap gap-2">
+                                  <div className="bg-red-950/20 p-3 rounded-lg border border-red-900/40 sm:col-span-2 md:col-span-3 space-y-2">
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-red-400 block text-[10px] uppercase font-bold tracking-wider">
+                                        MITRE ATT&CK MAPPINGS (EXPLICIT EVIDENCE & DERIVED RULES)
+                                      </span>
+                                      <Link
+                                        href="/mitre"
+                                        className="text-xs text-blue-400 hover:underline flex items-center space-x-1"
+                                      >
+                                        <span>View ATT&CK Matrix</span>
+                                        <span>→</span>
+                                      </Link>
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
                                       {item.mitre_techniques.map((mt: any) => (
-                                        <div key={mt.technique_id} className="bg-black/60 p-2 rounded border border-gray-800 flex items-center space-x-3 text-xs">
-                                          <span className="font-mono text-xs font-bold text-red-300 bg-red-950 px-2 py-0.5 rounded border border-red-800/80">
-                                            {mt.technique_id}
-                                          </span>
-                                          <span className="text-gray-200 font-medium">{mt.name}</span>
-                                          <span className="text-gray-500 text-[11px]">
-                                            Source: <span className="text-gray-300">{mt.source}</span>
-                                          </span>
-                                          <span className="text-gray-500 text-[11px]">
-                                            Conf: <span className="text-gray-300">{mt.confidence}</span>
-                                          </span>
-                                          <Link
-                                            href={`/mitre`}
-                                            className="text-blue-400 hover:underline text-[11px]"
-                                          >
-                                            Catalog →
-                                          </Link>
+                                        <div
+                                          key={mt.technique_id}
+                                          className="bg-black/60 p-2.5 rounded border border-gray-800 space-y-1.5"
+                                        >
+                                          <div className="flex items-center justify-between gap-2">
+                                            <div className="flex items-center space-x-2">
+                                              <button
+                                                onClick={() => setSelectedMitreTechnique({
+                                                  technique_id: mt.technique_id,
+                                                  name: mt.name,
+                                                  is_subtechnique: mt.is_subtechnique,
+                                                  parent_technique_id: mt.parent_technique_id,
+                                                  tactics: mt.tactics || []
+                                                })}
+                                                className="font-mono text-xs font-bold text-red-300 bg-red-950 px-2 py-0.5 rounded border border-red-800 hover:border-red-500 transition-colors"
+                                              >
+                                                {mt.technique_id}
+                                              </button>
+                                              <span className="text-gray-200 font-semibold text-xs truncate max-w-[180px]">
+                                                {mt.name}
+                                              </span>
+                                            </div>
+                                            {mt.is_subtechnique && (
+                                              <span className="text-[10px] bg-gray-800 text-gray-300 px-1.5 py-0.5 rounded font-mono">
+                                                Sub
+                                              </span>
+                                            )}
+                                          </div>
+
+                                          {/* Tactics Pills */}
+                                          {mt.tactics && mt.tactics.length > 0 && (
+                                            <div className="flex flex-wrap items-center gap-1">
+                                              <span className="text-[10px] text-gray-500 uppercase font-semibold">Tactics:</span>
+                                              {mt.tactics.map((t: any) => (
+                                                <button
+                                                  key={t.tactic_id}
+                                                  onClick={() => {
+                                                    setTacticId(t.tactic_id)
+                                                    setPage(1)
+                                                  }}
+                                                  className="text-[10px] bg-red-950/60 hover:bg-red-900 border border-red-900/50 text-red-300 px-1.5 py-0.2 rounded font-mono"
+                                                  title={`Filter timeline by tactic ${t.tactic_id}`}
+                                                >
+                                                  {t.tactic_id} ({t.name})
+                                                </button>
+                                              ))}
+                                            </div>
+                                          )}
+
+                                          {/* Provenance, Source, Confidence & Reference */}
+                                          <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-gray-800/60 text-[11px] text-gray-400">
+                                            {mt.relationship && (
+                                              <span className="text-gray-300 font-medium">
+                                                {mt.relationship}
+                                              </span>
+                                            )}
+                                            {mt.source && (
+                                              <span>
+                                                Source: <span className="text-gray-200 font-medium">{mt.source}</span>
+                                              </span>
+                                            )}
+                                            {mt.confidence && (
+                                              <span>
+                                                Conf: <span className="text-gray-200 font-medium">{mt.confidence}</span>
+                                              </span>
+                                            )}
+                                            {mt.evidence_reference && (
+                                              <span className="text-gray-500 truncate max-w-[200px]" title={mt.evidence_reference}>
+                                                Ref: {mt.evidence_reference}
+                                              </span>
+                                            )}
+                                          </div>
                                         </div>
                                       ))}
                                     </div>
@@ -1775,6 +2135,15 @@ function AttackTimelineContent() {
         <RawLogDetailsModal
           log={selectedRawLog}
           onClose={() => setSelectedRawLog(null)}
+        />
+      )}
+
+      {/* MITRE Technique Details Modal */}
+      {selectedMitreTechnique && (
+        <MitreTechniqueDetailsModal
+          technique={selectedMitreTechnique}
+          onClose={() => setSelectedMitreTechnique(null)}
+          onMappingCreated={fetchTimeline}
         />
       )}
     </div>

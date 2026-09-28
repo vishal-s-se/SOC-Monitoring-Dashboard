@@ -1151,16 +1151,38 @@ async def test_mitre_attack_foundation_phase_7e1(client: AsyncClient, db: AsyncS
     assert len(res_check.json()) == 0
 
     # 16. Phase 7E-2: Alert Inheritance of Detection Rule Mappings
-    # Create a new alert referencing the rule mapped to T1059.001
+    # Create a new event and alert referencing the rule mapped to T1059.001
+    event_inherited = Event(
+        event_id=str(uuid.uuid4()),
+        timestamp=datetime.now(timezone.utc),
+        event_type="process_creation",
+        event_category="process",
+        severity="HIGH",
+        hostname="sec-workstation"
+    )
+    db.add(event_inherited)
+    await db.flush()
+
     alert_inherited = Alert(
         alert_id=f"alt-inherit-{uuid.uuid4().hex[:8]}",
         rule_id=rule.id,
         title="Inherited Rule Alert Test",
         severity="HIGH",
         status="OPEN",
-        fingerprint=f"RUL-INHERIT-{uuid.uuid4().hex[:8]}"
+        fingerprint=f"RUL-INHERIT-{uuid.uuid4().hex[:8]}",
+        first_seen=datetime.now(timezone.utc),
+        last_seen=datetime.now(timezone.utc)
     )
     db.add(alert_inherited)
+    await db.flush()
+
+    # Link event to alert via DetectionResult
+    dr_inherited = DetectionResult(
+        event_id=event_inherited.id,
+        alert_id=alert_inherited.id,
+        rule_id=rule.id
+    )
+    db.add(dr_inherited)
     await db.commit()
 
     # Query alert mappings with include_inherited=True (default)
@@ -1274,3 +1296,88 @@ async def test_mitre_attack_foundation_phase_7e1(client: AsyncClient, db: AsyncS
     # Check detection rule still exists
     res_rule_check = await client.get(f"/api/v1/detections/rules/{rule.id}")
     assert res_rule_check.status_code == 200
+
+    # 21. Phase 7E-4: Attack Timeline MITRE Integration Tests
+    # A. Retrieve timeline for inv_rule_test: verify detection rule inherited MITRE technique on alert event
+    res_tl = await client.get(f"/api/v1/attack-timeline?investigation_id={inv_rule_test.id}")
+    assert res_tl.status_code == 200
+    tl_data = res_tl.json()
+    assert "summary" in tl_data
+    assert "items" in tl_data
+    assert tl_data["summary"]["mitre_events_count"] >= 1
+    assert tl_data["summary"]["mitre_techniques_count"] >= 1
+
+    # Verify item-level MITRE technique fields: technique_id, name, tactics, relationship
+    item_with_mitre = next((it for it in tl_data["items"] if it.get("mitre_techniques")), None)
+    assert item_with_mitre is not None
+    m_tech = item_with_mitre["mitre_techniques"][0]
+    assert m_tech["technique_id"] == "T1059.001"
+    assert "tactics" in m_tech
+    assert len(m_tech["tactics"]) >= 1
+    assert m_tech["relationship"] == "Detection Rule Mapping"
+
+    # B. Test mitre_only=true filter
+    res_tl_mitre_only = await client.get(f"/api/v1/attack-timeline?investigation_id={inv_rule_test.id}&mitre_only=true")
+    assert res_tl_mitre_only.status_code == 200
+    for it in res_tl_mitre_only.json()["items"]:
+        assert it.get("mitre_techniques") is not None
+        assert len(it["mitre_techniques"]) > 0
+
+    # C. Test technique_id filter
+    res_tl_tech = await client.get("/api/v1/attack-timeline?technique_id=T1059.001")
+    assert res_tl_tech.status_code == 200
+    assert res_tl_tech.json()["total"] >= 1
+
+    # D. Test tactic_id filter (TA0002 is Execution)
+    res_tl_tac = await client.get("/api/v1/attack-timeline?tactic_id=TA0002")
+    assert res_tl_tac.status_code == 200
+    assert res_tl_tac.json()["total"] >= 1
+
+    # E. Test invalid technique format and non-existent technique validation
+    res_bad_tech_fmt = await client.get("/api/v1/attack-timeline?technique_id=INVALID_TECH")
+    assert res_bad_tech_fmt.status_code == 400
+
+    res_not_found_tech = await client.get("/api/v1/attack-timeline?technique_id=T9998")
+    assert res_not_found_tech.status_code == 404
+
+    # F. Test invalid tactic format and non-existent tactic validation
+    res_bad_tac_fmt = await client.get("/api/v1/attack-timeline?tactic_id=INVALID_TAC")
+    assert res_bad_tac_fmt.status_code == 400
+
+    res_not_found_tac = await client.get("/api/v1/attack-timeline?tactic_id=TA9998")
+    assert res_not_found_tac.status_code == 404
+
+    # G. Test search matching technique ID
+    res_search_tech = await client.get("/api/v1/attack-timeline?search=T1059.001")
+    assert res_search_tech.status_code == 200
+    assert res_search_tech.json()["total"] >= 1
+
+    # H. Test direct Event mapping in timeline
+    # Create direct event mapping for event_inherited
+    res_ev_map = await client.post(
+        "/api/v1/mitre/mappings",
+        json={
+            "target_type": "EVENT",
+            "target_id": str(event_inherited.id),
+            "technique_id": "T1059",
+            "mapping_source": "ANALYST_CONFIRMED",
+            "confidence": "HIGH",
+            "notes": "Direct event confirmation"
+        }
+    )
+    assert res_ev_map.status_code == 201
+    ev_map_id = res_ev_map.json()["id"]
+
+    res_direct_ev_tl = await client.get(f"/api/v1/attack-timeline?technique_id=T1059&mitre_source=ANALYST_CONFIRMED")
+    assert res_direct_ev_tl.status_code == 200
+    assert res_direct_ev_tl.json()["total"] >= 1
+    direct_ev_item = next((it for it in res_direct_ev_tl.json()["items"] if it["id"] == event_inherited.id), None)
+    assert direct_ev_item is not None
+    direct_m = next((m for m in direct_ev_item["mitre_techniques"] if m["technique_id"] == "T1059"), None)
+    assert direct_m is not None
+    assert direct_m["relationship"] == "Event Direct Mapping"
+    assert direct_m["source"] == "ANALYST_CONFIRMED"
+    assert direct_m["confidence"] == "HIGH"
+
+    # Clean up mapping
+    await client.delete(f"/api/v1/mitre/mappings/{ev_map_id}")

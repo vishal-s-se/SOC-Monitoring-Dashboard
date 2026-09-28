@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import func, or_, and_
+from sqlalchemy import func, or_, and_, distinct
 from sqlalchemy.orm import selectinload
 from typing import Optional, List, Set, Dict, Any
 from datetime import datetime, timedelta
@@ -9,12 +9,21 @@ from datetime import datetime, timedelta
 from backend.app.db.session import get_db
 from backend.app.models.event import Event as EventModel
 from backend.app.models.alert import Alert as AlertModel
-from backend.app.models.detection import DetectionResult
+from backend.app.models.detection import DetectionResult, DetectionRule as DetectionRuleModel
 from backend.app.models.investigation import Investigation as InvestigationModel, InvestigationEvidence
 from backend.app.models.raw_log import RawLog as RawLogModel
 from backend.app.models.host import Host as HostModel
 from backend.app.models.agent import Agent as AgentModel
-from backend.app.models.mitre import MitreMapping as MitreMappingModel, MitreTechnique as MitreTechniqueModel
+from backend.app.models.mitre import (
+    MitreMapping as MitreMappingModel,
+    MitreTechnique as MitreTechniqueModel,
+    MitreTactic as MitreTacticModel,
+    MitreTechniqueTactic as MitreTechniqueTacticModel,
+    MitreMappingSource,
+    MitreConfidence,
+    MitreTargetType
+)
+from backend.app.schemas.mitre import MITRE_TECHNIQUE_ID_REGEX, MITRE_TACTIC_ID_REGEX
 from backend.app.schemas.timeline import TimelineItem, TimelineResponse, InvestigationTimelineMeta, TimelineSummaryMetrics
 
 router = APIRouter()
@@ -113,6 +122,12 @@ async def get_attack_timeline(
     time_window_minutes: int = Query(15, ge=1, le=1440),
     search: Optional[str] = None,
     order: Optional[str] = Query("desc", pattern="^(asc|desc)$"),
+    mitre_only: bool = Query(False, description="Filter only events with explicit or inherited MITRE ATT&CK mappings"),
+    technique_id: Optional[str] = Query(None, description="Filter by exact MITRE technique ID (e.g. T1059)"),
+    tactic_id: Optional[str] = Query(None, description="Filter by MITRE tactic ID (e.g. TA0002)"),
+    subtechnique_id: Optional[str] = Query(None, description="Filter by subtechnique ID (e.g. T1059.001)"),
+    mitre_source: Optional[str] = Query(None, description="Filter by mapping source"),
+    mitre_confidence: Optional[str] = Query(None, description="Filter by confidence: LOW, MEDIUM, HIGH"),
     db: AsyncSession = Depends(get_db)
 ):
     if start_time and end_time:
@@ -122,6 +137,35 @@ async def get_attack_timeline(
         e = end_time.replace(tzinfo=None) if end_time.tzinfo else end_time
         if (e - s) > timedelta(days=90):
             raise HTTPException(status_code=400, detail="Time range cannot exceed 90 days")
+
+    # Validate MITRE technique / tactic / subtechnique formats if supplied
+    tech_filter = subtechnique_id or technique_id
+    if tech_filter:
+        tech_filter = tech_filter.strip().upper()
+        if not MITRE_TECHNIQUE_ID_REGEX.match(tech_filter):
+            raise HTTPException(status_code=400, detail=f"Invalid MITRE technique ID format: '{tech_filter}'")
+        # Ensure technique exists in catalog
+        tech_exists = await db.execute(select(MitreTechniqueModel.technique_id).where(MitreTechniqueModel.technique_id == tech_filter))
+        if not tech_exists.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail=f"MITRE technique '{tech_filter}' not found in catalog")
+
+    if tactic_id:
+        tactic_id = tactic_id.strip().upper()
+        if not MITRE_TACTIC_ID_REGEX.match(tactic_id):
+            raise HTTPException(status_code=400, detail=f"Invalid MITRE tactic ID format: '{tactic_id}'")
+        tac_exists = await db.execute(select(MitreTacticModel.tactic_id).where(MitreTacticModel.tactic_id == tactic_id))
+        if not tac_exists.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail=f"MITRE tactic '{tactic_id}' not found in catalog")
+
+    if mitre_source:
+        valid_sources = {s.value for s in MitreMappingSource}
+        if mitre_source.upper() not in valid_sources:
+            raise HTTPException(status_code=400, detail=f"Invalid mapping source: '{mitre_source}'")
+
+    if mitre_confidence:
+        valid_conf = {c.value for c in MitreConfidence}
+        if mitre_confidence.upper() not in valid_conf:
+            raise HTTPException(status_code=400, detail=f"Invalid confidence: '{mitre_confidence}'")
 
     direct_event_ids: Set[int] = set()
     alert_trigger_event_ids: Set[int] = set()
@@ -163,7 +207,8 @@ async def get_attack_timeline(
                     time_range_end=None,
                     evidence_count=0,
                     correlated_count=0
-                )
+                ),
+                summary=TimelineSummaryMetrics()
             )
 
         context_timestamps: List[datetime] = []
@@ -314,7 +359,8 @@ async def get_attack_timeline(
             else:
                 return TimelineResponse(
                     items=[], page=page, page_size=page_size, total=0,
-                    investigation_info=investigation_meta
+                    investigation_info=investigation_meta,
+                    summary=TimelineSummaryMetrics()
                 )
         elif prov_norm in ["CORRELATED_EVENT", "CORRELATED_CONTEXT"]:
             if correlated_cond is not None:
@@ -322,7 +368,8 @@ async def get_attack_timeline(
             else:
                 return TimelineResponse(
                     items=[], page=page, page_size=page_size, total=0,
-                    investigation_info=investigation_meta
+                    investigation_info=investigation_meta,
+                    summary=TimelineSummaryMetrics()
                 )
         else:
             # Both direct and correlated
@@ -336,7 +383,8 @@ async def get_attack_timeline(
             else:
                 return TimelineResponse(
                     items=[], page=page, page_size=page_size, total=0,
-                    investigation_info=investigation_meta
+                    investigation_info=investigation_meta,
+                    summary=TimelineSummaryMetrics()
                 )
 
     # 2. ALERT CONTEXT
@@ -382,12 +430,12 @@ async def get_attack_timeline(
             if trigger_cond is not None:
                 stmt = stmt.where(trigger_cond)
             else:
-                return TimelineResponse(items=[], page=page, page_size=page_size, total=0)
+                return TimelineResponse(items=[], page=page, page_size=page_size, total=0, summary=TimelineSummaryMetrics())
         elif prov_norm in ["CORRELATED_EVENT", "CORRELATED_CONTEXT", "SURROUNDING_CONTEXT"]:
             if surrounding_cond is not None:
                 stmt = stmt.where(surrounding_cond)
             else:
-                return TimelineResponse(items=[], page=page, page_size=page_size, total=0)
+                return TimelineResponse(items=[], page=page, page_size=page_size, total=0, summary=TimelineSummaryMetrics())
         else:
             alert_branches = []
             if trigger_cond is not None:
@@ -397,7 +445,7 @@ async def get_attack_timeline(
             if alert_branches:
                 stmt = stmt.where(or_(*alert_branches))
             else:
-                return TimelineResponse(items=[], page=page, page_size=page_size, total=0)
+                return TimelineResponse(items=[], page=page, page_size=page_size, total=0, summary=TimelineSummaryMetrics())
 
     # 3. STANDARD USER FILTERS
     if hostname:
@@ -432,9 +480,154 @@ async def get_attack_timeline(
     if end_time and investigation_id is None and alert_id is None:
         stmt = stmt.where(EventModel.timestamp <= end_time)
 
+    # 4. MITRE ATT&CK FILTERING (Phase 7E-4)
+    # Filter by mitre_only, technique_id, tactic_id, subtechnique_id, mitre_source, mitre_confidence
+    if mitre_only or tech_filter or tactic_id or mitre_source or mitre_confidence:
+        # Build conditions on MitreMappingModel
+        mapping_conditions = []
+        if tech_filter:
+            mapping_conditions.append(MitreMappingModel.technique_id == tech_filter)
+        if tactic_id:
+            # Technique linked to tactic
+            sub_tactic_techs = select(MitreTechniqueTacticModel.technique_id).where(MitreTechniqueTacticModel.tactic_id == tactic_id)
+            mapping_conditions.append(MitreMappingModel.technique_id.in_(sub_tactic_techs))
+        if mitre_source:
+            mapping_conditions.append(MitreMappingModel.mapping_source == mitre_source.upper())
+        if mitre_confidence:
+            mapping_conditions.append(MitreConfidence[mitre_confidence.upper()].value if mitre_confidence.upper() in MitreConfidence.__members__ else MitreMappingModel.confidence == mitre_confidence.upper())
+
+        map_filter = and_(*mapping_conditions) if mapping_conditions else True
+
+        # Candidate events:
+        # A. Direct Event mappings (target_type == 'EVENT')
+        ev_maps_q = select(MitreMappingModel.target_id).where(
+            MitreMappingModel.target_type == "EVENT",
+            map_filter
+        )
+        ev_maps_res = await db.execute(ev_maps_q)
+        target_ids = ev_maps_res.scalars().all()
+        matching_event_ids: Set[int] = set()
+        for tid in target_ids:
+            if tid.isdigit():
+                matching_event_ids.add(int(tid))
+            else:
+                # Target ID could be string event_id (UUID-style)
+                str_eid_q = select(EventModel.id).where(EventModel.event_id == tid)
+                eid_res = await db.execute(str_eid_q)
+                for eid_found in eid_res.scalars().all():
+                    matching_event_ids.add(eid_found)
+
+        # B. Alert mappings (target_type == 'ALERT') -> triggers event_id via DetectionResult
+        al_maps_q = select(MitreMappingModel.target_id).where(
+            MitreMappingModel.target_type == "ALERT",
+            map_filter
+        )
+        al_maps_res = await db.execute(al_maps_q)
+        al_target_ids = al_maps_res.scalars().all()
+        if al_target_ids:
+            num_al_ids = [int(a) for a in al_target_ids if a.isdigit()]
+            str_al_ids = [a for a in al_target_ids if not a.isdigit()]
+            al_id_conds = []
+            if num_al_ids:
+                al_id_conds.append(AlertModel.id.in_(num_al_ids))
+            if str_al_ids:
+                al_id_conds.append(AlertModel.alert_id.in_(str_al_ids))
+            if al_id_conds:
+                al_stmt = select(AlertModel.id).where(or_(*al_id_conds))
+                found_alerts = (await db.execute(al_stmt)).scalars().all()
+                if found_alerts:
+                    al_dr_q = select(DetectionResult.event_id).where(DetectionResult.alert_id.in_(found_alerts))
+                    for eid in (await db.execute(al_dr_q)).scalars().all():
+                        matching_event_ids.add(eid)
+
+        # C. Detection Rule mappings (target_type == 'DETECTION_RULE') -> alert -> DetectionResult -> event_id
+        rule_maps_q = select(MitreMappingModel.target_id).where(
+            MitreMappingModel.target_type == "DETECTION_RULE",
+            map_filter
+        )
+        rule_maps_res = await db.execute(rule_maps_q)
+        rule_target_ids = rule_maps_res.scalars().all()
+        if rule_target_ids:
+            num_r_ids = [int(r) for r in rule_target_ids if r.isdigit()]
+            r_alerts_conds = []
+            if num_r_ids:
+                r_alerts_conds.append(AlertModel.rule_id.in_(num_r_ids))
+            # Also check detection rules matched by rule_id string if any
+            if r_alerts_conds:
+                r_alerts_q = select(AlertModel.id).where(or_(*r_alerts_conds))
+                r_alert_ids = (await db.execute(r_alerts_q)).scalars().all()
+                if r_alert_ids:
+                    r_dr_q = select(DetectionResult.event_id).where(DetectionResult.alert_id.in_(r_alert_ids))
+                    for eid in (await db.execute(r_dr_q)).scalars().all():
+                        matching_event_ids.add(eid)
+
+        if matching_event_ids:
+            stmt = stmt.where(EventModel.id.in_(list(matching_event_ids)))
+        else:
+            # No events match the requested MITRE criteria
+            return TimelineResponse(
+                items=[],
+                page=page,
+                page_size=page_size,
+                total=0,
+                investigation_info=investigation_meta,
+                summary=TimelineSummaryMetrics(
+                    total_events=0,
+                    direct_evidence_count=0,
+                    correlated_count=0,
+                    alerts_count=0
+                )
+            )
+
+    # 5. SEARCH (Extended for MITRE technique ID, name, tactic name in Phase 7E-4)
     if search:
         search_term = f"%{search.strip()}%"
-        stmt = stmt.where(or_(
+        # Find any technique IDs or names matching search
+        matching_tech_q = select(MitreTechniqueModel.technique_id).where(
+            or_(
+                MitreTechniqueModel.technique_id.ilike(search_term),
+                MitreTechniqueModel.name.ilike(search_term)
+            )
+        )
+        matching_tech_ids = (await db.execute(matching_tech_q)).scalars().all()
+
+        matching_tactic_q = select(MitreTechniqueTacticModel.technique_id).join(
+            MitreTacticModel, MitreTechniqueTacticModel.tactic_id == MitreTacticModel.tactic_id
+        ).where(
+            or_(
+                MitreTacticModel.tactic_id.ilike(search_term),
+                MitreTacticModel.name.ilike(search_term)
+            )
+        )
+        matching_tactic_techs = (await db.execute(matching_tactic_q)).scalars().all()
+        all_search_techs = list(set(matching_tech_ids + matching_tactic_techs))
+
+        search_event_ids: Set[int] = set()
+        if all_search_techs:
+            s_map_q = select(MitreMappingModel.target_type, MitreMappingModel.target_id).where(
+                MitreMappingModel.technique_id.in_(all_search_techs)
+            )
+            for m_type, m_id in (await db.execute(s_map_q)).all():
+                if m_type == "EVENT":
+                    if m_id.isdigit():
+                        search_event_ids.add(int(m_id))
+                    else:
+                        for eid in (await db.execute(select(EventModel.id).where(EventModel.event_id == m_id))).scalars().all():
+                            search_event_ids.add(eid)
+                elif m_type == "ALERT":
+                    a_id = int(m_id) if m_id.isdigit() else None
+                    if a_id:
+                        for eid in (await db.execute(select(DetectionResult.event_id).where(DetectionResult.alert_id == a_id))).scalars().all():
+                            search_event_ids.add(eid)
+                elif m_type == "DETECTION_RULE":
+                    r_id = int(m_id) if m_id.isdigit() else None
+                    if r_id:
+                        al_ids = (await db.execute(select(AlertModel.id).where(AlertModel.rule_id == r_id))).scalars().all()
+                        if al_ids:
+                            for eid in (await db.execute(select(DetectionResult.event_id).where(DetectionResult.alert_id.in_(al_ids)))).scalars().all():
+                                search_event_ids.add(eid)
+
+        search_conds = [
             EventModel.username.ilike(search_term),
             EventModel.hostname.ilike(search_term),
             EventModel.host.has(HostModel.hostname.ilike(search_term)),
@@ -444,7 +637,11 @@ async def get_attack_timeline(
             EventModel.event_id.ilike(search_term),
             EventModel.source_ip.ilike(search_term),
             EventModel.destination_ip.ilike(search_term)
-        ))
+        ]
+        if search_event_ids:
+            search_conds.append(EventModel.id.in_(list(search_event_ids)))
+
+        stmt = stmt.where(or_(*search_conds))
 
     # Total Count
     count_stmt = select(func.count()).select_from(stmt.subquery())
@@ -462,22 +659,26 @@ async def get_attack_timeline(
     events_res = await db.execute(stmt)
     events = events_res.scalars().all()
 
-    # Query alert markers for events on this page
+    # Query alert markers for events on this page (including rule_id)
     event_ids_on_page = [ev.id for ev in events]
     event_alerts_map: Dict[int, Dict[str, Any]] = {}
+    alert_rule_ids: Dict[int, int] = {}
     if event_ids_on_page:
         dr_stmt = (
-            select(DetectionResult.event_id, AlertModel.id, AlertModel.title, AlertModel.severity)
+            select(DetectionResult.event_id, AlertModel.id, AlertModel.title, AlertModel.severity, AlertModel.rule_id)
             .join(AlertModel, DetectionResult.alert_id == AlertModel.id)
             .where(DetectionResult.event_id.in_(event_ids_on_page))
         )
         dr_res = await db.execute(dr_stmt)
-        for eid, aid, atitle, asev in dr_res.all():
+        for eid, aid, atitle, asev, arule_id in dr_res.all():
             event_alerts_map[eid] = {
                 "alert_id": str(aid),
                 "alert_title": atitle,
-                "alert_severity": asev
+                "alert_severity": asev,
+                "rule_id": arule_id
             }
+            if arule_id:
+                alert_rule_ids[aid] = arule_id
 
     # Batch-resolve investigation relationships for events on this page
     event_inv_map: Dict[int, Dict[str, Any]] = {}
@@ -545,6 +746,9 @@ async def get_attack_timeline(
         mitre_ev_stmt = (
             select(MitreMappingModel, MitreTechniqueModel)
             .join(MitreTechniqueModel, MitreMappingModel.technique_id == MitreTechniqueModel.technique_id)
+            .options(
+                selectinload(MitreTechniqueModel.tactics).selectinload(MitreTechniqueTacticModel.tactic)
+            )
             .where(
                 MitreMappingModel.target_type == "EVENT",
                 MitreMappingModel.target_id.in_(event_str_ids)
@@ -552,6 +756,10 @@ async def get_attack_timeline(
         )
         mitre_ev_res = await db.execute(mitre_ev_stmt)
         for m_obj, t_obj in mitre_ev_res.all():
+            tactics = [
+                {"tactic_id": tt.tactic.tactic_id, "name": tt.tactic.name}
+                for tt in t_obj.tactics if tt.tactic
+            ]
             for ev in events:
                 if str(ev.id) == m_obj.target_id or ev.event_id == m_obj.target_id:
                     if ev.id not in event_mitre_map:
@@ -559,9 +767,13 @@ async def get_attack_timeline(
                     event_mitre_map[ev.id].append({
                         "technique_id": t_obj.technique_id,
                         "name": t_obj.name,
+                        "tactics": tactics,
+                        "is_subtechnique": t_obj.is_subtechnique,
+                        "parent_technique_id": t_obj.parent_technique_id,
                         "source": m_obj.mapping_source,
                         "confidence": m_obj.confidence,
-                        "evidence_reference": m_obj.evidence_reference
+                        "evidence_reference": m_obj.evidence_reference or f"Event #{ev.id}",
+                        "relationship": "Event Direct Mapping"
                     })
 
         # Also check if any associated alert has an explicit MITRE mapping
@@ -570,6 +782,9 @@ async def get_attack_timeline(
             mitre_al_stmt = (
                 select(MitreMappingModel, MitreTechniqueModel)
                 .join(MitreTechniqueModel, MitreMappingModel.technique_id == MitreTechniqueModel.technique_id)
+                .options(
+                    selectinload(MitreTechniqueModel.tactics).selectinload(MitreTechniqueTacticModel.tactic)
+                )
                 .where(
                     MitreMappingModel.target_type == "ALERT",
                     MitreMappingModel.target_id.in_(alert_str_ids)
@@ -577,6 +792,10 @@ async def get_attack_timeline(
             )
             mitre_al_res = await db.execute(mitre_al_stmt)
             for m_obj, t_obj in mitre_al_res.all():
+                tactics = [
+                    {"tactic_id": tt.tactic.tactic_id, "name": tt.tactic.name}
+                    for tt in t_obj.tactics if tt.tactic
+                ]
                 for ev_id, a_info in event_alerts_map.items():
                     if a_info.get("alert_id") == m_obj.target_id:
                         if ev_id not in event_mitre_map:
@@ -586,9 +805,50 @@ async def get_attack_timeline(
                             event_mitre_map[ev_id].append({
                                 "technique_id": t_obj.technique_id,
                                 "name": t_obj.name,
+                                "tactics": tactics,
+                                "is_subtechnique": t_obj.is_subtechnique,
+                                "parent_technique_id": t_obj.parent_technique_id,
                                 "source": m_obj.mapping_source,
                                 "confidence": m_obj.confidence,
-                                "evidence_reference": m_obj.evidence_reference or f"Alert #{m_obj.target_id}"
+                                "evidence_reference": m_obj.evidence_reference or f"Alert #{m_obj.target_id}",
+                                "relationship": "Alert Mapping"
+                            })
+
+        # Also check Detection Rule mappings for alerts on this page
+        rule_ids_on_page = list(set([str(info["rule_id"]) for info in event_alerts_map.values() if info.get("rule_id")]))
+        if rule_ids_on_page:
+            mitre_rule_stmt = (
+                select(MitreMappingModel, MitreTechniqueModel)
+                .join(MitreTechniqueModel, MitreMappingModel.technique_id == MitreTechniqueModel.technique_id)
+                .options(
+                    selectinload(MitreTechniqueModel.tactics).selectinload(MitreTechniqueTacticModel.tactic)
+                )
+                .where(
+                    MitreMappingModel.target_type == "DETECTION_RULE",
+                    MitreMappingModel.target_id.in_(rule_ids_on_page)
+                )
+            )
+            mitre_rule_res = await db.execute(mitre_rule_stmt)
+            for m_obj, t_obj in mitre_rule_res.all():
+                tactics = [
+                    {"tactic_id": tt.tactic.tactic_id, "name": tt.tactic.name}
+                    for tt in t_obj.tactics if tt.tactic
+                ]
+                for ev_id, a_info in event_alerts_map.items():
+                    if str(a_info.get("rule_id")) == m_obj.target_id:
+                        if ev_id not in event_mitre_map:
+                            event_mitre_map[ev_id] = []
+                        if not any(x["technique_id"] == t_obj.technique_id for x in event_mitre_map[ev_id]):
+                            event_mitre_map[ev_id].append({
+                                "technique_id": t_obj.technique_id,
+                                "name": t_obj.name,
+                                "tactics": tactics,
+                                "is_subtechnique": t_obj.is_subtechnique,
+                                "parent_technique_id": t_obj.parent_technique_id,
+                                "source": m_obj.mapping_source,
+                                "confidence": m_obj.confidence,
+                                "evidence_reference": m_obj.evidence_reference or f"Rule #{m_obj.target_id} (via Alert)",
+                                "relationship": "Detection Rule Mapping"
                             })
 
     items: List[TimelineItem] = []
@@ -685,7 +945,7 @@ async def get_attack_timeline(
             )
         )
 
-    # Compute timeline summary metrics
+    # Compute timeline summary metrics including MITRE metrics
     unique_hosts = sorted(list({ev.hostname or (ev.host.hostname if ev.host else None) for ev in events if (ev.hostname or (ev.host and ev.host.hostname))}))
     unique_agents = sorted(list({ev.agent_id for ev in events if ev.agent_id is not None}))
     unique_users = sorted(list({ev.username for ev in events if ev.username}))
@@ -693,6 +953,23 @@ async def get_attack_timeline(
     unique_destination_ips = sorted(list({ev.destination_ip for ev in events if ev.destination_ip}))
     unique_categories = sorted(list({ev.event_category for ev in events if ev.event_category}))
     unique_types = sorted(list({ev.event_type for ev in events if ev.event_type}))
+
+    # Count MITRE occurrences on page items
+    events_with_mitre = [e for e in items if e.mitre_techniques]
+    mitre_tech_set: Set[str] = set()
+    mitre_tac_set: Set[str] = set()
+    analyst_conf_cnt = 0
+    doc_rule_cnt = 0
+
+    for itm in events_with_mitre:
+        for tech in (itm.mitre_techniques or []):
+            mitre_tech_set.add(tech["technique_id"])
+            if tech.get("source") == MitreMappingSource.ANALYST_CONFIRMED.value:
+                analyst_conf_cnt += 1
+            if tech.get("source") == MitreMappingSource.DOCUMENTED_RULE.value or tech.get("relationship") == "Detection Rule Mapping":
+                doc_rule_cnt += 1
+            for tac in (tech.get("tactics") or []):
+                mitre_tac_set.add(tac["tactic_id"])
 
     summary_metrics = TimelineSummaryMetrics(
         total_events=total,
@@ -705,7 +982,12 @@ async def get_attack_timeline(
         unique_source_ips=unique_source_ips,
         unique_destination_ips=unique_destination_ips,
         unique_event_categories=unique_categories,
-        unique_event_types=unique_types
+        unique_event_types=unique_types,
+        mitre_events_count=len(events_with_mitre),
+        mitre_techniques_count=len(mitre_tech_set),
+        mitre_tactics_count=len(mitre_tac_set),
+        analyst_confirmed_count=analyst_conf_cnt,
+        documented_rules_count=doc_rule_cnt
     )
 
     return TimelineResponse(

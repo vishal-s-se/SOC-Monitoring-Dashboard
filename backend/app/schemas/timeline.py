@@ -64,6 +64,11 @@ class TimelineSummaryMetrics(BaseModel):
     unique_destination_ips: List[str] = []
     unique_event_categories: List[str] = []
     unique_event_types: List[str] = []
+    mitre_events_count: int = 0
+    mitre_techniques_count: int = 0
+    mitre_tactics_count: int = 0
+    analyst_confirmed_count: int = 0
+    documented_rules_count: int = 0
 
 class TimelineResponse(PaginatedResponse[TimelineItem]):
     investigation_info: Optional[InvestigationTimelineMeta] = None
