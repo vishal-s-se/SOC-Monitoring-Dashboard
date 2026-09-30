@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from backend.app.api.v1.endpoints import (
     health,
     reports,
+    retention,
     investigations,
     events,
     raw_logs,
@@ -25,6 +26,7 @@ from backend.app.api.v1.endpoints import (
 api_router = APIRouter()
 api_router.include_router(health.router, prefix="/health", tags=["health"])
 api_router.include_router(reports.router, prefix="/reports", tags=["reports"])
+api_router.include_router(retention.router, prefix="/retention", tags=["retention"])
 
 api_router.include_router(events.router, prefix="/events", tags=["events"])
 api_router.include_router(raw_logs.router, prefix="/raw_logs", tags=["raw_logs"])

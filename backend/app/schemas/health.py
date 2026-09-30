@@ -29,3 +29,4 @@ class HealthOverview(BaseModel):
     active_websockets: int
     events_per_second: float
     timestamp: datetime
+    cleanup_status: Optional[Dict[str, Any]] = None

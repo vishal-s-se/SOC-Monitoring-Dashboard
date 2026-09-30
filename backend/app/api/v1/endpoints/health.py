@@ -6,6 +6,7 @@ from datetime import datetime, timezone, timedelta
 from typing import List
 
 from backend.app.db.session import get_db
+from backend.app.models.retention import CleanupAuditLog
 from backend.app.schemas.health import HealthOverview, ServiceHealth, QueueHealth
 from backend.app.models.agent import Agent
 from backend.app.models.host import Host
@@ -75,7 +76,21 @@ async def get_health_overview(db: AsyncSession = Depends(get_db)):
         )
     ]
     
+    
+    cleanup_log = (await db.execute(select(CleanupAuditLog).order_by(CleanupAuditLog.timestamp.desc()).limit(1))).scalars().first()
+    cleanup_status = None
+    if cleanup_log:
+        cleanup_status = {
+            "status": cleanup_log.status,
+            "last_execution": cleanup_log.timestamp.isoformat() if cleanup_log.timestamp else None,
+            "records_deleted": cleanup_log.records_deleted,
+            "duration_seconds": cleanup_log.duration_seconds
+        }
+    else:
+        cleanup_status = {"status": "NEVER_EXECUTED"}
+
     return HealthOverview(
+        cleanup_status=cleanup_status,
         overall_status=overall_status,
         services=services,
         queues=queues,
