@@ -25,6 +25,7 @@ const NAV_ITEMS = [
   { name: 'Raw Logs', href: '/raw-logs' },
   { name: 'Agents', href: '/agents' },
   { name: 'Reports', href: '/reports' },
+  { name: 'System Health', href: '/system-health' },
   { name: 'Settings', href: '/settings' },
 ]
 
