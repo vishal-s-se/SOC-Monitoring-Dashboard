@@ -8,9 +8,11 @@ This platform provides a modular monitoring workflow for telemetry supplied by a
 ## Current Release State
 
 The repository contains the PostgreSQL/Alembic data layer, authenticated FastAPI
-backend, collector ingestion pipeline, detection and investigation models/API,
-MITRE mapping surfaces, retention controls, and Next.js dashboard. Windows and
-Linux endpoint agents are not included; see the [release checklist](docs/release-checklist.md).
+backend, collector ingestion pipeline, lightweight Windows/Linux endpoint agents,
+detection and investigation models/API, MITRE mapping surfaces, retention
+controls, and Next.js dashboard. See [endpoint agent documentation](docs/agents.md)
+and the [release checklist](docs/release-checklist.md) for supported sources and
+limitations.
 
 ## Technology Stack
 - **Frontend**: Next.js, React, TypeScript, Tailwind CSS
@@ -24,7 +26,7 @@ Linux endpoint agents are not included; see the [release checklist](docs/release
 - `/backend`: FastAPI backend application.
 - `/frontend`: Next.js frontend application.
 - `/collector`: Authenticated event ingestion and normalization service.
-- `/agents`: Reserved for endpoint agent implementations; no Windows or Linux agent is included in this release.
+- `/agents`: Shared agent core plus Windows and Linux endpoint collectors.
 - `/docs`: Architecture and development documentation.
 
 ## Local Setup
@@ -72,4 +74,5 @@ This project runs directly on the host machine. You will need Node.js, Python
 - [Installation and deployment](docs/deployment.md)
 - [API reference](docs/api.md)
 - [Authorized SOC lab guide](docs/soc-lab.md)
+- [Endpoint agents](docs/agents.md)
 - [Release checklist](docs/release-checklist.md)

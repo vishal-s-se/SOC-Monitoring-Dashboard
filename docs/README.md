@@ -50,6 +50,10 @@ Implemented controls include password hashing, expiring JWTs with in-process rev
 - [Database architecture](architecture/database.md)
 - [Database development](development/database.md)
 
+## Endpoint agents
+
+The repository includes lightweight Windows and Linux endpoint agents that send telemetry only to the collector. See the [endpoint agent guide](agents.md) for configuration, supported sources, deployment preparation, and platform limitations.
+
 ## Important limitation
 
 Telemetry claims must match the producer. There are no checked-in endpoint agents, no built-in Windows/Linux log readers, and no seeded detection catalog in the repository database by default. An event indicator is not proof of compromise.

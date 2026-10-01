@@ -127,3 +127,4 @@ Expected HTTP status is `200` for each endpoint. The backend database health che
 - **Collector returns `401`:** send `X-Agent-Auth: YOUR_AGENT_TOKEN`; the value must match `AGENT_SHARED_SECRET`.
 - **Dashboard API is unavailable:** set `NEXT_PUBLIC_API_URL` before building or running Next.js.
 - **Dashboard real-time status is disconnected:** verify the WebSocket URL and complete the frontend bearer-token integration required by the protected backend WebSocket endpoint.
+- **Endpoint agent cannot deliver events:** verify the agent token, collector host/port, registration response, and the durable spool described in [Endpoint Agents](agents.md).

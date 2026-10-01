@@ -8,8 +8,8 @@ This checklist reflects the repository at Phase 10C. Status values are limited t
 | PostgreSQL schema and migrations | COMPLETE | `backend/alembic/`, `docs/architecture/database.md` | `alembic check`; backend tests |
 | Collector registration, heartbeat, and ingestion | COMPLETE | `collector/app/routes.py`, `collector/app/pipeline.py` | Collector tests; live `201/200/202` smoke path |
 | Raw log preservation and normalization | COMPLETE | `collector/app/pipeline.py`, `backend/app/models/raw_log.py`, `event.py` | Live PostgreSQL trace; collector tests |
-| Windows agent | NOT IMPLEMENTED | `agents/` contains only `.gitkeep` | No agent tests or source present |
-| Linux agent | NOT IMPLEMENTED | `agents/` contains only `.gitkeep` | No agent tests or source present |
+| Windows agent | COMPLETE | `agents/windows/`, `docs/agents.md` | Synthetic Windows event parser and cursor tests; native collection is platform-dependent |
+| Linux agent | COMPLETE | `agents/linux/`, `docs/agents.md` | File/journald parsing, offset, cursor, and unavailable-source tests |
 | Detection engine models and results API | COMPLETE | `backend/app/models/detection.py`, detection endpoints, engine modules | Backend detection tests |
 | Seeded detection-rule catalog | PARTIAL | Detection-rule model/API exist; no default enabled rules in the live database | Rule inventory returned no enabled rules |
 | Alert lifecycle | COMPLETE | Alert endpoints, models, dashboard alert views | Backend API regression tests |
@@ -23,7 +23,7 @@ This checklist reflects the repository at Phase 10C. Status values are limited t
 | Security controls | PARTIAL | `backend/app/core/`, `collector/app/`, `backend/app/main.py` | Security implementation present; frontend dependency audit remains red |
 | Reports and secure exports | COMPLETE | `backend/app/api/v1/endpoints/reports.py`, `docs/api.md` | Reports regression tests and filename validation |
 | Retention policy and cleanup | COMPLETE | retention endpoint, models, migrations | Retention regression tests; migration check |
-| System and agent health | PARTIAL | health endpoints and agent models | Backend health passes; no endpoint agent exists to provide real telemetry |
+| System and agent health | PARTIAL | health endpoints, agent models, and endpoint agents | Real health telemetry requires running agents and readable platform sources |
 | Search and filtering | COMPLETE | event, investigation, timeline, analytics, and report endpoints | Backend API regression tests |
 | Native deployment scripts | COMPLETE | `scripts/start-all.ps1`, `docs/deployment.md` | PowerShell parse check; live service startup |
 | TLS and certificate management | PARTIAL | `HTTPS_ENABLED` and deployment guidance | TLS termination remains external |
@@ -71,6 +71,21 @@ The authorized workflow for these captures is documented in [the SOC lab guide](
 | Docker validation | NOT IMPLEMENTED | Docker is explicitly outside the supported release path |
 
 The release candidate is portfolio/demo-ready for the implemented collector, API, database, and dashboard surfaces. It is not a claim of complete endpoint-agent coverage or turnkey alert generation.
+
+## Phase 11A validation record
+
+| Validation | Status | Evidence |
+|---|---|---|
+| Shared agent core | COMPLETE | Configuration, identity, transport, retry, TLS settings, durable bounded spool, and runner tests |
+| Windows agent | COMPLETE | Native `Get-WinEvent` collector with per-channel `RecordId` cursor and unavailable-channel tests |
+| Linux agent | COMPLETE | File offset/inode collector, journald cursor collector, and unavailable-source tests |
+| Collector protocol integration | COMPLETE | Registration, heartbeat, and event payloads match existing collector schemas and authentication |
+| Agent/backend/collector regression | COMPLETE | `73 passed` |
+| Migration check | COMPLETE | No new upgrade operations detected |
+| Frontend build | COMPLETE | Next.js build generated 27 routes |
+| Dependency audit | PARTIAL | Existing one high and one critical frontend advisory; remediation requires a breaking Next.js upgrade |
+
+Phase 11A adds endpoint collection without changing the collector, backend, or dashboard protocol. Full OS-source coverage remains dependent on host permissions and installed logging facilities.
 
 ## Release gate
 

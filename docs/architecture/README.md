@@ -6,7 +6,7 @@ The SOC Monitor platform follows a distributed, event-driven architecture design
 
 ```mermaid
 flowchart TD
-    E[Endpoint or test producer] -->|Telemetry| C[Central Collector]
+    E[Windows/Linux agent or test producer] -->|X-Agent-Auth telemetry| C[Central Collector]
     C --> R[RawLog preservation]
     R --> N[Event normalization]
     N --> D[Detection results when rules match]
@@ -27,6 +27,6 @@ flowchart TD
 
 ## Current Implementation Status
 
-The backend, collector, database migrations, dashboard, detection result model, alert/investigation/MITRE surfaces, retention controls, and authenticated WebSocket server are implemented. The repository does not contain Windows or Linux agents, a default enabled detection catalog, or a Redis-backed queue.
+The backend, collector, database migrations, dashboard, detection result model, alert/investigation/MITRE surfaces, retention controls, authenticated WebSocket server, and lightweight Windows/Linux agents are implemented. Agent telemetry remains dependent on readable platform sources; the repository does not include a default enabled detection catalog or a Redis-backed queue.
 
 See the [release checklist](../release-checklist.md) for the authoritative implementation status.
