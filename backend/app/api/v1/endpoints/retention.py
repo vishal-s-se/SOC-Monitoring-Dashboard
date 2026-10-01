@@ -3,11 +3,14 @@ import time
 from datetime import datetime, timezone, timedelta
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete, func
 
 from backend.app.db.session import get_db
+from backend.app.api.deps import get_current_active_user
+from backend.app.core.audit import audit
+from backend.app.models.user import User
 from backend.app.models.retention import RetentionPolicy, CleanupAuditLog
 from backend.app.models.raw_log import RawLog
 from backend.app.models.event import Event
@@ -38,11 +41,9 @@ async def get_policy(db: AsyncSession = Depends(get_db)):
 @router.put("/policy", response_model=RetentionPolicyInDB)
 async def update_policy(
     policy_in: RetentionPolicyUpdate,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
 ):
-    if policy_in.raw_logs_days < 1 or policy_in.normalized_events_days < 1:
-        raise HTTPException(status_code=400, detail="Retention days must be >= 1")
-        
     policy = await get_or_create_policy(db)
     policy.raw_logs_days = policy_in.raw_logs_days
     policy.normalized_events_days = policy_in.normalized_events_days
@@ -50,13 +51,14 @@ async def update_policy(
     policy.alerts_days = policy_in.alerts_days
     policy.behavioral_data_days = policy_in.behavioral_data_days
     policy.updated_at = datetime.now(timezone.utc)
-    policy.updated_by = "admin" # TODO: auth
-    
+    policy.updated_by = current_user.username
+
     await db.commit()
     await db.refresh(policy)
+    audit("retention_policy_updated", actor=current_user.username, outcome="success", policy_id=policy.id)
     return policy
 
-async def execute_cleanup(db: AsyncSession, is_dry_run: bool = False, is_manual: bool = True) -> CleanupResult:
+async def execute_cleanup(db: AsyncSession, is_dry_run: bool = False, is_manual: bool = True, initiated_by: str = "system") -> CleanupResult:
     start_time = time.time()
     execution_id = str(uuid.uuid4())
     policy = await get_or_create_policy(db)
@@ -133,6 +135,7 @@ async def execute_cleanup(db: AsyncSession, is_dry_run: bool = False, is_manual:
         is_manual=is_manual,
         is_dry_run=is_dry_run,
         status=status,
+        initiated_by=initiated_by,
         records_examined=examined,
         records_deleted=deleted,
         records_skipped=skipped,
@@ -155,7 +158,10 @@ async def execute_cleanup(db: AsyncSession, is_dry_run: bool = False, is_manual:
     )
 
 @router.post("/dry-run", response_model=CleanupPreviewResponse)
-async def dry_run_cleanup(db: AsyncSession = Depends(get_db)):
+async def dry_run_cleanup(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
     policy = await get_or_create_policy(db)
     now = datetime.now(timezone.utc)
     
@@ -171,6 +177,7 @@ async def dry_run_cleanup(db: AsyncSession = Depends(get_db)):
     r_alt = (await db.execute(select(func.count(Alert.id)).where(Alert.last_seen < c_alt))).scalar() or 0
     r_beh = (await db.execute(select(func.count(BehaviorDeviation.id)).where(BehaviorDeviation.created_at < c_beh))).scalar() or 0
     
+    audit("retention_dry_run", actor=current_user.username, outcome="success")
     return CleanupPreviewResponse(
         raw_logs_eligible=r_raw,
         events_eligible=r_evt,
@@ -188,12 +195,20 @@ async def dry_run_cleanup(db: AsyncSession = Depends(get_db)):
     )
 
 @router.post("/cleanup", response_model=CleanupResult)
-async def manual_cleanup(background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
-    # Run inline for now instead of background task because we want the response directly
-    result = await execute_cleanup(db, is_dry_run=False, is_manual=True)
+async def manual_cleanup(
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    result = await execute_cleanup(db, is_dry_run=False, is_manual=True, initiated_by=current_user.username)
+    audit("retention_cleanup", actor=current_user.username, outcome=result.status.lower(), deleted=result.records_deleted)
     return result
 
 @router.get("/history", response_model=List[CleanupAuditLogResponse])
-async def get_history(db: AsyncSession = Depends(get_db), limit: int = 50):
+async def get_history(
+    db: AsyncSession = Depends(get_db),
+    limit: int = Query(50, ge=1, le=100),
+    current_user: User = Depends(get_current_active_user),
+):
     logs = (await db.execute(select(CleanupAuditLog).order_by(CleanupAuditLog.timestamp.desc()).limit(limit))).scalars().all()
     return logs

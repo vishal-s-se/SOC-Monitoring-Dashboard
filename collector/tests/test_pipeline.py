@@ -9,11 +9,12 @@ from sqlalchemy.future import select
 from backend.app.models.raw_log import RawLog
 from backend.app.models.event import Event
 from backend.app.models.agent import Agent
+from collector.app.config import settings
 
 import pytest_asyncio
 
 # Shared mock data
-AUTH_HEADERS = {"X-Agent-Auth": "changeme_secret"}
+AUTH_HEADERS = {"X-Agent-Auth": settings.AGENT_SHARED_SECRET}
 
 @pytest_asyncio.fixture
 async def setup_agent(client: AsyncClient, db: AsyncSession):

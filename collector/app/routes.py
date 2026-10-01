@@ -4,8 +4,8 @@ from sqlalchemy.future import select
 import uuid
 import datetime
 
-from collector.app.dependencies import get_db, verify_agent_auth
-from collector.app.schemas import AgentRegistration, HeartbeatRequest, EventRequest
+from .dependencies import get_db, verify_agent_auth
+from .schemas import AgentRegistration, HeartbeatRequest, EventRequest
 
 # Reuse Phase 2 Models
 from backend.app.models.agent import Agent
@@ -133,7 +133,7 @@ async def receive_heartbeat(
 
     return {"status": "ok"}
 
-from collector.app.pipeline import process_event
+from .pipeline import process_event
 
 @router.post("/events", status_code=status.HTTP_202_ACCEPTED)
 async def receive_event(

@@ -3,8 +3,8 @@
 ## Prerequisites
 - Node.js (for local frontend development)
 - Python 3.11+ (for local backend/collector development)
-- PostgreSQL (when required by Phase 2)
-- Redis (when required by Phase 3)
+- PostgreSQL
+- Redis is optional for the current request path.
 
 ## Environment Setup
 1. Clone the repository.
@@ -16,7 +16,7 @@
 ## Development Commands
 
 ### Using Local Host (Required)
-This project runs directly on the local machine without Docker during Phase 1-8. Docker will be introduced in Phase 9.
+This project runs directly on the local machine. Docker is not required by the current repository.
 
 ### Local Backend Development
 ```bash
@@ -24,7 +24,7 @@ cd backend
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
-uvicorn app.main:app --reload
+uvicorn backend.app.main:app --reload --port 8000
 ```
 
 ### Local Frontend Development

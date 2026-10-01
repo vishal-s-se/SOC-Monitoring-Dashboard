@@ -1,13 +1,13 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 
 class RetentionPolicyBase(BaseModel):
-    raw_logs_days: int = 7
-    normalized_events_days: int = 30
-    detection_results_days: int = 90
-    alerts_days: int = 90
-    behavioral_data_days: int = 90
+    raw_logs_days: int = Field(7, ge=1, le=3650)
+    normalized_events_days: int = Field(30, ge=1, le=3650)
+    detection_results_days: int = Field(90, ge=1, le=3650)
+    alerts_days: int = Field(90, ge=1, le=3650)
+    behavioral_data_days: int = Field(90, ge=1, le=3650)
 
 class RetentionPolicyUpdate(RetentionPolicyBase):
     pass

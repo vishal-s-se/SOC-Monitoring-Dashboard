@@ -8,7 +8,7 @@ The project relies on PostgreSQL running locally. No Docker is used for the data
 ### Environment Configuration
 Copy `.env.example` to `.env` and set `DATABASE_URL`.
 Example:
-`DATABASE_URL=postgresql://postgres:postgres@localhost:5432/soc_monitor`
+`DATABASE_URL=postgresql://localhost:5432/soc_monitor`
 
 ### Running Migrations
 Alembic is used to manage database schema changes.

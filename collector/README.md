@@ -33,7 +33,7 @@ Receives raw event telemetry from the agent and queues/persists it for the proce
 Authentication and database connectivity are configured via the project's root `.env` file or environment variables.
 
 - `COLLECTOR_PORT`: Default 5000
-- `AGENT_SHARED_SECRET`: Default `changeme_secret` (Local Dev)
+- `AGENT_SHARED_SECRET`: Required environment variable used to authenticate agents.
 - `DATABASE_URL`: Inherits from root `.env` but converts to `postgresql+asyncpg://` for async operations.
 
 ## Running the Collector

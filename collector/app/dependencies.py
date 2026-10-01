@@ -6,19 +6,27 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
+import hmac
+
 from fastapi import Depends, HTTPException, Security, status
 from fastapi.security import APIKeyHeader
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.pool import NullPool
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 
-from collector.app.config import settings
+from .config import settings
 
 # Setup Database using Phase 2 connection
 # Using NullPool for simplicity in collector to avoid event loop issues across tests
 url = settings.DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://") if settings.DATABASE_URL else ""
 engine = create_async_engine(url, poolclass=NullPool, echo=False)
-SessionLocal = async_sessionmaker(autocommit=False, autoflush=False, bind=engine, class_=AsyncSession)
+SessionLocal = async_sessionmaker(
+    autocommit=False,
+    autoflush=False,
+    bind=engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+)
 
 async def get_db():
     async with SessionLocal() as session:
@@ -33,7 +41,9 @@ async def verify_agent_auth(api_key: str = Security(api_key_header)):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing authentication",
         )
-    if api_key != settings.AGENT_SHARED_SECRET:
+    if not settings.AGENT_SHARED_SECRET or not hmac.compare_digest(
+        api_key, settings.AGENT_SHARED_SECRET
+    ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",

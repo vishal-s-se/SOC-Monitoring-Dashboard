@@ -2,6 +2,7 @@ import pytest
 from httpx import AsyncClient
 from datetime import datetime, timezone
 import uuid
+from collector.app.config import settings
 
 @pytest.mark.asyncio
 async def test_health_check(client: AsyncClient):
@@ -30,7 +31,7 @@ async def test_valid_registration(client: AsyncClient):
         "agent_version": "1.0",
         "ip_address": "127.0.0.1"
     }
-    headers = {"X-Agent-Auth": "changeme_secret"}
+    headers = {"X-Agent-Auth": settings.AGENT_SHARED_SECRET}
     response = await client.post("/api/v1/agent/register", json=payload, headers=headers)
 
     assert response.status_code == 201
@@ -46,7 +47,7 @@ async def test_idempotent_registration(client: AsyncClient):
         "operating_system": "linux",
         "agent_version": "1.0"
     }
-    headers = {"X-Agent-Auth": "changeme_secret"}
+    headers = {"X-Agent-Auth": settings.AGENT_SHARED_SECRET}
 
     # First time
     resp1 = await client.post("/api/v1/agent/register", json=payload, headers=headers)
@@ -67,7 +68,7 @@ async def test_heartbeat_unknown_agent(client: AsyncClient):
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "connection_status": "ONLINE"
     }
-    headers = {"X-Agent-Auth": "changeme_secret"}
+    headers = {"X-Agent-Auth": settings.AGENT_SHARED_SECRET}
     response = await client.post("/api/v1/agent/heartbeat", json=payload, headers=headers)
     assert response.status_code == 404
 
@@ -81,7 +82,7 @@ async def test_valid_heartbeat_and_event(client: AsyncClient):
         "operating_system": "windows",
         "agent_version": "1.0"
     }
-    headers = {"X-Agent-Auth": "changeme_secret"}
+    headers = {"X-Agent-Auth": settings.AGENT_SHARED_SECRET}
     await client.post("/api/v1/agent/register", json=payload, headers=headers)
 
     # 2. Heartbeat

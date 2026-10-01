@@ -1,38 +1,36 @@
 # SOC Monitor Platform
 
-A lightweight, real-time Security Operations Center monitoring platform.
+A lightweight, real-time Security Operations Center monitoring platform for ingesting, normalizing, investigating, and reporting on security telemetry.
 
 ## Project Purpose
-This platform aims to provide a modular, practical security monitoring solution capable of endpoint monitoring, event normalization, detection, and alerting across both Windows and Linux systems.
+This platform provides a modular monitoring workflow for telemetry supplied by authorized producers. It preserves raw events, normalizes them, evaluates configured detection rules, and exposes alerts and investigations through an API and dashboard.
 
-## Current Phase: Phase 2 (Database & Core Backend)
-This repository currently contains the Phase 2 implementation. It establishes:
-- PostgreSQL database integration
-- SQLAlchemy ORM and Alembic migrations
-- Core entities (Hosts, Agents, Raw Logs, Events, Heartbeats)
-- Database health checks and connection management
-- Monorepo project structure
-- Configuration system
+## Current Release State
 
-**Limitations:** The current phase does NOT include actual telemetry collection, detection rules, or full UI functionality. These are planned for future phases.
+The repository contains the PostgreSQL/Alembic data layer, authenticated FastAPI
+backend, collector ingestion pipeline, detection and investigation models/API,
+MITRE mapping surfaces, retention controls, and Next.js dashboard. Windows and
+Linux endpoint agents are not included; see the [release checklist](docs/release-checklist.md).
 
 ## Technology Stack
 - **Frontend**: Next.js, React, TypeScript, Tailwind CSS
 - **Backend**: Python, FastAPI, Pydantic, SQLAlchemy, Alembic
 - **Database**: PostgreSQL
-- **Queue/Cache**: Redis (Planned)
-- **Containerization**: Local Native (Docker planned for Phase 9)
+- **Queue/Cache**: Redis configuration is retained, but the current request path
+   does not require a Redis service.
+- **Deployment**: Native local services; Docker is not required.
 
 ## Repository Structure
 - `/backend`: FastAPI backend application.
 - `/frontend`: Next.js frontend application.
-- `/collector`: Event ingestion service (skeleton).
-- `/agents`: Agent implementation placeholders.
+- `/collector`: Authenticated event ingestion and normalization service.
+- `/agents`: Reserved for endpoint agent implementations; no Windows or Linux agent is included in this release.
 - `/docs`: Architecture and development documentation.
 
 ## Local Setup
 
-This project runs directly on the host machine for development. You will need Node.js and Python 3.11+. Redis and PostgreSQL should be installed locally when required by future phases.
+This project runs directly on the host machine. You will need Node.js, Python
+3.11+, and PostgreSQL.
 
 1. Copy the example environment file:
    ```bash
@@ -53,30 +51,25 @@ This project runs directly on the host machine for development. You will need No
    python -m venv venv
    source venv/bin/activate  # Windows: venv\Scripts\activate
    pip install -r requirements.txt
-   uvicorn app.main:app --reload --port 8000
+   uvicorn backend.app.main:app --reload --port 8000
    ```
-3. Start the Frontend (in a new terminal):
+5. Start the Frontend (in a new terminal):
    ```bash
    cd frontend
    npm install
    npm run dev
    ```
-4. Access the services:
+6. Access the services:
    - Frontend: `http://localhost:3000`
    - Backend API: `http://localhost:8000`
    - Backend Health: `http://localhost:8000/health`
    - Database Health: `http://localhost:8000/health/db`
    - Collector API: `http://localhost:5000` (When running)
 
-## Testing
-Run backend tests (requires Python environment and local PostgreSQL):
-```bash
-cd backend
-pip install -r requirements.txt
-pytest tests/test_db.py -v
-```
+## Documentation
 
-## Future Phases
-- Phase 3: Telemetry ingestion, real-time event streaming (Agent & Collector).
-- Phase 4: Detection engine, alerting, MITRE ATT&CK mapping.
-- Phase 5: Incident response and investigation workflows.
+- [Documentation overview](docs/README.md)
+- [Installation and deployment](docs/deployment.md)
+- [API reference](docs/api.md)
+- [Authorized SOC lab guide](docs/soc-lab.md)
+- [Release checklist](docs/release-checklist.md)

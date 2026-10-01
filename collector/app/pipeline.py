@@ -8,8 +8,8 @@ from fastapi import HTTPException
 from backend.app.models.raw_log import RawLog
 from backend.app.models.event import Event
 from backend.app.models.agent import Agent
-from collector.app.schemas import EventRequest
-from collector.app.parser import parse_event_payload
+from .schemas import EventRequest
+from .parser import parse_event_payload
 
 logger = logging.getLogger(__name__)
 

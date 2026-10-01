@@ -6,32 +6,27 @@ The SOC Monitor platform follows a distributed, event-driven architecture design
 
 ```mermaid
 flowchart TD
-    E[Endpoints] -->|Telemetry| A[Lightweight Agents]
-    A -->|Events| C[Central Collector]
-    C -->|Queue| N[Log Processing / Normalization]
-    N --> D[Analysis Engine]
-    D --> DB[(Database)]
+    E[Endpoint or test producer] -->|Telemetry| C[Central Collector]
+    C --> R[RawLog preservation]
+    R --> N[Event normalization]
+    N --> D[Detection results when rules match]
+    D --> A[Alerts when configured]
+    A --> DB[(PostgreSQL)]
+    N --> DB
     DB --> API[Backend API]
     API --> UI[Web Dashboard]
+    API --> WS[WebSocket]
 ```
 
 ## Architectural Boundaries
 
-1.  **Collector vs Backend**: The Central Collector acts as an ingestion pipeline for agent events. It operates independently of the Backend API, allowing it to scale based on agent traffic without impacting the web dashboard's performance.
-2.  **Agents vs Database**: Agents never communicate directly with the database. All interactions are routed through the Collector to ensure security and data normalization.
-3.  **Frontend vs Backend**: The Next.js frontend is decoupled from the backend and collector. It retrieves data strictly through the Backend API layer.
+1. **Collector vs Backend:** The collector is the endpoint-facing ingestion service. The backend serves the dashboard and analyst API.
+2. **Agents vs Database:** Agents must never communicate directly with PostgreSQL. All producer traffic goes through authenticated collector routes.
+3. **Frontend vs Backend:** The Next.js frontend retrieves data through the backend API and subscribes to the backend WebSocket endpoint.
+4. **Raw vs normalized data:** `RawLog` preserves the received payload; `Event` contains normalized, queryable fields.
 
 ## Current Implementation Status
 
-**IMPLEMENTED NOW (Phase 1):**
-- Foundation for API, UI, and Collector.
-- Docker Compose orchestration.
-- Basic routing and health endpoints.
-- Project structure and boundaries.
+The backend, collector, database migrations, dashboard, detection result model, alert/investigation/MITRE surfaces, retention controls, and authenticated WebSocket server are implemented. The repository does not contain Windows or Linux agents, a default enabled detection catalog, or a Redis-backed queue.
 
-**PLANNED FOR FUTURE PHASES:**
-- Complete agent implementation (Windows/Linux).
-- Database schema mapping and migrations.
-- Redis event queue processing.
-- Detection engine (MITRE ATT&CK rules).
-- Alert generation and WebSockets.
+See the [release checklist](../release-checklist.md) for the authoritative implementation status.

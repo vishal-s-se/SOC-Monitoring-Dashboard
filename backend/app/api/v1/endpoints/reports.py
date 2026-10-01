@@ -2,6 +2,7 @@ import io
 import csv
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
+from backend.app.core.filenames import parse_ip_or_400, safe_filename
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from datetime import datetime, timezone, timedelta
@@ -30,16 +31,19 @@ def generate_csv_response(data: list, filename: str):
         writer.writeheader()
         for row in data:
             writer.writerow(row)
-    
+
     output.seek(0)
+    safe_name = safe_filename(filename)
     response = StreamingResponse(iter([output.getvalue()]), media_type="text/csv")
-    response.headers["Content-Disposition"] = f"attachment; filename={filename}"
+    response.headers["Content-Disposition"] = f'attachment; filename="{safe_name}"'
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["X-Content-Type-Options"] = "nosniff"
     return response
 
 
 @router.get("/daily-summary")
 async def get_daily_summary(
-    hours: int = 24,
+    hours: int = Query(24, ge=1, le=168),
     format: str = Query("json", description="json or csv"),
     db: AsyncSession = Depends(get_db)
 ):
@@ -109,7 +113,7 @@ async def get_daily_summary(
 @router.get("/host/{host_id}")
 async def get_host_report(
     host_id: int,
-    hours: int = 24,
+    hours: int = Query(24, ge=1, le=168),
     format: str = Query("json", description="json or csv"),
     db: AsyncSession = Depends(get_db)
 ):
@@ -142,13 +146,18 @@ async def get_host_report(
 @router.get("/ip/{ip}")
 async def get_ip_report(
     ip: str,
-    hours: int = 24,
+    hours: int = Query(24, ge=1, le=168),
     format: str = Query("json", description="json or csv"),
     db: AsyncSession = Depends(get_db)
 ):
+    try:
+        ip = parse_ip_or_400(ip)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid IP address")
+
     now = datetime.now(timezone.utc)
     start_time = now - timedelta(hours=hours)
-    
+
     stmt = select(Event).where(Event.timestamp >= start_time).where((Event.source_ip == ip) | (Event.destination_ip == ip)).limit(1000)
     events = (await db.execute(stmt)).scalars().all()
     
@@ -172,7 +181,7 @@ async def get_ip_report(
 
 @router.get("/timeline")
 async def get_timeline_report(
-    hours: int = 24,
+    hours: int = Query(24, ge=1, le=168),
     format: str = Query("json", description="json or csv"),
     db: AsyncSession = Depends(get_db)
 ):
@@ -228,7 +237,7 @@ async def get_alert_report(
 
 @router.get("/authentication")
 async def get_auth_report(
-    hours: int = 24,
+    hours: int = Query(24, ge=1, le=168),
     format: str = Query("json", description="json or csv"),
     db: AsyncSession = Depends(get_db)
 ):
@@ -253,7 +262,7 @@ async def get_auth_report(
 
 @router.get("/firewall")
 async def get_firewall_report(
-    hours: int = 24,
+    hours: int = Query(24, ge=1, le=168),
     format: str = Query("json", description="json or csv"),
     db: AsyncSession = Depends(get_db)
 ):
