@@ -60,6 +60,17 @@ class Settings(BaseSettings):
         origins = [item.strip() for item in self.CORS_ORIGINS.split(",") if item.strip()]
         return origins or ["http://localhost:3000"]
 
+    # Correlation configuration
+    CORRELATION_BURST_WINDOW_MINUTES: int = 5
+    CORRELATION_BURST_THRESHOLD: int = 100
+    CORRELATION_CLOSED_PORT_WINDOW_MINUTES: int = 5
+    CORRELATION_CLOSED_PORT_THRESHOLD: int = 10
+    CORRELATION_LOGIN_FAILURE_WINDOW_MINUTES: int = 15
+    CORRELATION_LOGIN_FAILURE_THRESHOLD: int = 5
+    CORRELATION_BASELINE_DAYS: int = 7
+    CORRELATION_BASELINE_MIN_OBSERVATIONS: int = 3
+    CORRELATION_LATERAL_MOVEMENT_WINDOW_MINUTES: int = 30
+
     @property
     def is_production(self) -> bool:
         return self.ENVIRONMENT == "production"

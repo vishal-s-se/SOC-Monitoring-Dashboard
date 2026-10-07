@@ -44,22 +44,16 @@ def test_catalog_enabled_rules_use_supported_single_event_conditions():
         "source_ip": "192.0.2.10",
     }
     enabled_rules = [entry for entry in DETECTION_CATALOG if entry["enabled"]]
-    assert {entry["rule_id"] for entry in enabled_rules} == {
-        "RULE-004",
-        "RULE-005",
-        "RULE-006",
-        "RULE-007",
-        "RULE-008",
-        "RULE-015",
-    }
+    # All rules should now be enabled
+    assert len(enabled_rules) == len(DETECTION_CATALOG)
     assert ConditionEvaluator.evaluate(event, next(entry["conditions"] for entry in enabled_rules if entry["rule_id"] == "RULE-007"))
     assert ConditionEvaluator.evaluate(event, next(entry["conditions"] for entry in enabled_rules if entry["rule_id"] == "RULE-015"))
 
 
-def test_correlation_rules_are_present_but_disabled():
-    disabled = {entry["rule_id"]: entry for entry in DETECTION_CATALOG if not entry["enabled"]}
-    assert set(disabled) == {"RULE-009", "RULE-010", "RULE-011", "RULE-012", "RULE-013", "RULE-014"}
-    assert all("correlation-required" in entry["tags"] or "baseline-required" in entry["tags"] for entry in disabled.values())
+def test_correlation_rules_are_present_and_enabled():
+    correlation_rules = {entry["rule_id"]: entry for entry in DETECTION_CATALOG if "correlation-required" in entry["tags"] or "baseline-required" in entry["tags"]}
+    assert set(correlation_rules) == {"RULE-009", "RULE-010", "RULE-011", "RULE-012", "RULE-013", "RULE-014"}
+    assert all(entry["enabled"] is True for entry in correlation_rules.values())
 
 
 def test_detection_catalog_seed_is_idempotent_and_preserves_disabled_state():

@@ -54,10 +54,15 @@ class DetectionProcessor:
             severity=data.get("severity"),
         )
         
-        results = self._engine.evaluate_event(ev)
+        from backend.app.engine.correlation import correlation_engine
         
-        if results:
-            async with SessionLocal() as db:
+        async with SessionLocal() as db:
+            results = self._engine.evaluate_event(ev)
+            synthetic_events = await correlation_engine.correlate(db, ev)
+            for syn_ev in synthetic_events:
+                results.extend(self._engine.evaluate_event(syn_ev))
+            
+            if results:
                 for res in results:
                     # Find rule
                     rule = next((r for r in self._engine.rules if r.id == res.rule_id), None)
