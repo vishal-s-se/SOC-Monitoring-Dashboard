@@ -4,7 +4,9 @@
 
 Detection rules are stored in `detection_rule` and exposed through `/api/v1/detections/rules`. A rule contains a unique `rule_id`, name, description, enabled flag, severity, JSON conditions, tags, and version. A matching event may create a `DetectionResult`; the result can reference an `Alert`.
 
-The repository does not currently ship a seeded, enabled rule catalog. Therefore there is no truthful built-in rule table to document as active. Administrators can inspect configured rules through the API and should record the exact conditions and version when enabling one.
+The backend synchronizes an idempotent initial catalog at startup. `RULE-004` through `RULE-015` are defined in `backend/app/services/detection_catalog.py`; single-event rules are enabled, while rules requiring historical correlation or baselines remain disabled until the corresponding context exists. Existing disabled rules are never re-enabled by synchronization.
+
+The catalog covers admin logins, account creation, firewall denies, process and service events, PowerShell, outbound bursts, closed-port repetition, login-after-failure, unusual sources, brute force, and lateral movement indicators. The last six correlation/baseline cases are represented for configuration visibility but are not claimed as active detections by the current single-event evaluator.
 
 ## Expected lifecycle
 

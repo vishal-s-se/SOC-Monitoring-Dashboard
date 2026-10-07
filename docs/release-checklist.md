@@ -8,10 +8,10 @@ This checklist reflects the repository at Phase 10C. Status values are limited t
 | PostgreSQL schema and migrations | COMPLETE | `backend/alembic/`, `docs/architecture/database.md` | `alembic check`; backend tests |
 | Collector registration, heartbeat, and ingestion | COMPLETE | `collector/app/routes.py`, `collector/app/pipeline.py` | Collector tests; live `201/200/202` smoke path |
 | Raw log preservation and normalization | COMPLETE | `collector/app/pipeline.py`, `backend/app/models/raw_log.py`, `event.py` | Live PostgreSQL trace; collector tests |
-| Windows agent | COMPLETE | `agents/windows/`, `docs/agents.md` | Synthetic Windows event parser and cursor tests; native collection is platform-dependent |
-| Linux agent | COMPLETE | `agents/linux/`, `docs/agents.md` | File/journald parsing, offset, cursor, and unavailable-source tests |
+| Windows agent | COMPLETE | Separate `Security-Monitering-Agent` repository | Main repository consumes the existing collector contract |
+| Linux agent | COMPLETE | Separate `Security-Monitering-Agent` repository | Main repository consumes the existing collector contract |
 | Detection engine models and results API | COMPLETE | `backend/app/models/detection.py`, detection endpoints, engine modules | Backend detection tests |
-| Seeded detection-rule catalog | PARTIAL | Detection-rule model/API exist; no default enabled rules in the live database | Rule inventory returned no enabled rules |
+| Seeded detection-rule catalog | COMPLETE | `backend/app/services/detection_catalog.py`, `detection_seeder.py` | Four catalog tests cover IDs, supported conditions, idempotency, and disabled-rule preservation |
 | Alert lifecycle | COMPLETE | Alert endpoints, models, dashboard alert views | Backend API regression tests |
 | Investigations and evidence | COMPLETE | Investigation endpoints, models, dashboard views | Backend API regression tests |
 | MITRE catalog and mappings | COMPLETE | MITRE models, endpoints, dashboard | Backend API regression tests |
@@ -64,7 +64,7 @@ The authorized workflow for these captures is documented in [the SOC lab guide](
 | Frontend production build | COMPLETE | Next.js build generated 27 routes |
 | Database migration consistency | COMPLETE | `alembic check` completed without pending operations |
 | Dashboard route inventory | COMPLETE | All navigation targets have corresponding App Router pages; investigation detail is implemented as a dynamic route |
-| Endpoint agents | NOT IMPLEMENTED | `agents/` contains no Windows or Linux implementation |
+| Endpoint agents | COMPLETE | Separate `Security-Monitering-Agent` repository | Endpoint implementation is intentionally outside this repository |
 | Seeded detection catalog | PARTIAL | Detection APIs exist; no default enabled catalog is included |
 | Frontend automated test suite | NOT IMPLEMENTED | No frontend test script is defined |
 | Frontend dependency audit | PARTIAL | Existing audit advisories remain documented; no unrelated dependency change was made |
@@ -77,8 +77,7 @@ The release candidate is portfolio/demo-ready for the implemented collector, API
 | Validation | Status | Evidence |
 |---|---|---|
 | Shared agent core | COMPLETE | Configuration, identity, transport, retry, TLS settings, durable bounded spool, and runner tests |
-| Windows agent | COMPLETE | Native `Get-WinEvent` collector with per-channel `RecordId` cursor and unavailable-channel tests |
-| Linux agent | COMPLETE | File offset/inode collector, journald cursor collector, and unavailable-source tests |
+| Endpoint-agent ownership | COMPLETE | Main repository references the separate authoritative agent repository | No duplicate implementation remains here |
 | Collector protocol integration | COMPLETE | Registration, heartbeat, and event payloads match existing collector schemas and authentication |
 | Agent/backend/collector regression | COMPLETE | `73 passed` |
 | Migration check | COMPLETE | No new upgrade operations detected |

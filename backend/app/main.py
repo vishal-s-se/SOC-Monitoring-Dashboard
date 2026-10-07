@@ -20,8 +20,14 @@ PUBLIC_PATHS = {"/", "/health", "/health/db"}
 async def lifespan(app: FastAPI):
     from backend.app.engine.event_bus import event_bus
     from backend.app.models.user import User
+    from backend.app.services.detection_seeder import seed_detection_catalog
 
     event_bus.start()
+    try:
+        async with SessionLocal() as db:
+            await seed_detection_catalog(db)
+    except Exception as exc:
+        logger.warning("Detection catalog synchronization skipped: %s", exc)
     if settings.BOOTSTRAP_ADMIN_USERNAME and settings.BOOTSTRAP_ADMIN_PASSWORD:
         try:
             async with SessionLocal() as db:

@@ -1,6 +1,6 @@
 # Authorized SOC Lab Guide
 
-Use only systems and traffic that you own or are explicitly authorized to test. These scenarios describe validation intent; they do not assert that a Windows or Linux agent exists in this repository.
+Use only systems and traffic that you own or are explicitly authorized to test. Endpoint agents are maintained in the separate [Security-Monitering-Agent repository](https://github.com/vishal-s-se/Security-Monitering-Agent).
 
 ## Common trace
 
@@ -23,7 +23,7 @@ An event indicator is not proof of compromise. Record the source, timestamp, hos
 
 ## Collector smoke test
 
-The repository can validate this scenario without an endpoint agent by sending a Pydantic-valid request to the collector:
+The SOC Monitor repository can validate this scenario without an endpoint agent by sending a Pydantic-valid request to the collector:
 
 1. Set `AGENT_SHARED_SECRET=YOUR_AGENT_TOKEN`.
 2. Register an agent with `POST /api/v1/agent/register`.
@@ -36,7 +36,7 @@ This verifies collection, raw preservation, normalization, and database persiste
 
 ## Final demonstration workflow
 
-Use a producer and detection rule that are configured in the authorized lab. The repository does not ship endpoint agents or a default enabled rule catalog, so the collector smoke test is the supported baseline when those are unavailable.
+Use an agent from the authoritative agent repository and a configured detection rule in the authorized lab. The collector smoke test remains a supported producer-free baseline.
 
 1. Generate controlled endpoint activity on an owned or explicitly authorized system.
 2. Have the authorized producer collect the telemetry.
@@ -58,7 +58,7 @@ For a producer-free demonstration, stop after step 5 and show the raw event, nor
 
 | Scenario | Expected telemetry | Repository status |
 |---|---|---|
-| Repeated authentication failures | Authentication event with username, source IP, host, and timestamp | Collector accepts arbitrary event payloads; no checked-in agent or seeded rule is present. |
+| Repeated authentication failures | Authentication event with username, source IP, host, and timestamp | Use the separate agent repository or an authorized producer; configure the applicable rule before expecting an alert. |
 | Successful login after failures | Authentication success linked by host/user/time | Same limitation; configure a rule before expecting an alert. |
 | Port scanning indicator | Multiple network events with source/destination IPs, ports, and protocol | Event schema supports these fields; no endpoint network sensor is included. |
 | Firewall block | Firewall event with action, IPs, ports, and protocol | Report/query surfaces exist; producer and seeded rule are absent. |

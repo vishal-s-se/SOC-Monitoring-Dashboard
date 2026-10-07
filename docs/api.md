@@ -119,7 +119,7 @@ The collector uses port `5000`, not the backend API prefix:
 - `POST /api/v1/agent/heartbeat`
 - `POST /api/v1/agent/events`
 
-The three agent routes require `X-Agent-Auth: YOUR_AGENT_TOKEN`. Payloads are Pydantic-validated and the collector rejects oversized request bodies. Lightweight Windows and Linux endpoint clients are documented in [Endpoint Agents](agents.md); their available telemetry remains platform-dependent.
+The three agent routes require `X-Agent-Auth: YOUR_AGENT_TOKEN`. Payloads are Pydantic-validated and the collector rejects oversized request bodies. Endpoint clients are maintained in the separate [Security-Monitering-Agent repository](https://github.com/vishal-s-se/Security-Monitering-Agent); their available telemetry remains platform-dependent.
 
 ## WebSocket
 

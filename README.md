@@ -8,11 +8,10 @@ This platform provides a modular monitoring workflow for telemetry supplied by a
 ## Current Release State
 
 The repository contains the PostgreSQL/Alembic data layer, authenticated FastAPI
-backend, collector ingestion pipeline, lightweight Windows/Linux endpoint agents,
-detection and investigation models/API, MITRE mapping surfaces, retention
-controls, and Next.js dashboard. See [endpoint agent documentation](docs/agents.md)
-and the [release checklist](docs/release-checklist.md) for supported sources and
-limitations.
+backend, collector ingestion pipeline, detection and investigation models/API,
+MITRE mapping surfaces, retention controls, and Next.js dashboard. See the
+[architecture documentation](docs/architecture/README.md) and [release checklist](docs/release-checklist.md)
+for the relationship with the authoritative endpoint-agent repository.
 
 ## Technology Stack
 - **Frontend**: Next.js, React, TypeScript, Tailwind CSS
@@ -26,7 +25,7 @@ limitations.
 - `/backend`: FastAPI backend application.
 - `/frontend`: Next.js frontend application.
 - `/collector`: Authenticated event ingestion and normalization service.
-- `/agents`: Shared agent core plus Windows and Linux endpoint collectors.
+- Endpoint agents live in the separate [Security-Monitering-Agent repository](https://github.com/vishal-s-se/Security-Monitering-Agent) and communicate only with `/collector`.
 - `/docs`: Architecture and development documentation.
 
 ## Local Setup
@@ -74,5 +73,5 @@ This project runs directly on the host machine. You will need Node.js, Python
 - [Installation and deployment](docs/deployment.md)
 - [API reference](docs/api.md)
 - [Authorized SOC lab guide](docs/soc-lab.md)
-- [Endpoint agents](docs/agents.md)
+- [Endpoint-agent relationship](docs/architecture/README.md#endpoint-agents)
 - [Release checklist](docs/release-checklist.md)

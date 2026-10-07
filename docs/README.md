@@ -1,6 +1,6 @@
 # SOC Monitor Documentation
 
-SOC Monitor is a local-host FastAPI, PostgreSQL, collector, and Next.js monitoring platform. The repository contains the backend API, collector ingestion pipeline, database migrations, dashboard, and security controls. It does not contain Windows or Linux agent implementations; `agents/` currently contains only `.gitkeep`.
+SOC Monitor is a local-host FastAPI, PostgreSQL, collector, and Next.js monitoring platform. This repository contains the backend API, collector ingestion pipeline, database migrations, dashboard, detection, investigation, reporting, and security controls. Windows and Linux endpoint agents live in the separate [Security-Monitering-Agent repository](https://github.com/vishal-s-se/Security-Monitering-Agent) and send telemetry only to this repository's collector.
 
 ## Architecture
 
@@ -52,8 +52,8 @@ Implemented controls include password hashing, expiring JWTs with in-process rev
 
 ## Endpoint agents
 
-The repository includes lightweight Windows and Linux endpoint agents that send telemetry only to the collector. See the [endpoint agent guide](agents.md) for configuration, supported sources, deployment preparation, and platform limitations.
+The authoritative [Security-Monitering-Agent repository](https://github.com/vishal-s-se/Security-Monitering-Agent) contains the shared core, Windows agent, Linux agent, configuration, buffering, platform collectors, and agent tests. This repository owns the collector contract and downstream SOC processing.
 
 ## Important limitation
 
-Telemetry claims must match the producer. There are no checked-in endpoint agents, no built-in Windows/Linux log readers, and no seeded detection catalog in the repository database by default. An event indicator is not proof of compromise.
+Telemetry claims must match the producer. Agent availability and platform permissions determine which sources reach the collector. An event indicator is not proof of compromise.

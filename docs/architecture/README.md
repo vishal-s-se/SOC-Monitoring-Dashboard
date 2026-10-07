@@ -18,6 +18,10 @@ flowchart TD
     API --> WS[WebSocket]
 ```
 
+## Endpoint agents
+
+Windows and Linux agents are maintained in the separate [Security-Monitering-Agent repository](https://github.com/vishal-s-se/Security-Monitering-Agent). They communicate with the collector on port `5000` using the shared-secret protocol and never connect directly to the backend, dashboard, or PostgreSQL.
+
 ## Architectural Boundaries
 
 1. **Collector vs Backend:** The collector is the endpoint-facing ingestion service. The backend serves the dashboard and analyst API.
@@ -27,6 +31,6 @@ flowchart TD
 
 ## Current Implementation Status
 
-The backend, collector, database migrations, dashboard, detection result model, alert/investigation/MITRE surfaces, retention controls, authenticated WebSocket server, and lightweight Windows/Linux agents are implemented. Agent telemetry remains dependent on readable platform sources; the repository does not include a default enabled detection catalog or a Redis-backed queue.
+The backend, collector, database migrations, dashboard, detection result model, alert/investigation/MITRE surfaces, retention controls, and authenticated WebSocket server are implemented here. Endpoint collection is maintained by the separate agent repository. The repository does not include a Redis-backed queue.
 
 See the [release checklist](../release-checklist.md) for the authoritative implementation status.

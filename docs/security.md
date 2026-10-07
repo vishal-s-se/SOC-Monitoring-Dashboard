@@ -24,7 +24,7 @@ This page distinguishes implemented controls from deployment configuration and m
 
 ## Not implemented or remaining
 
-- Windows/Linux endpoint agents and their certificate identity are not present in this repository.
+- Windows/Linux endpoint agents and their certificate identity are maintained in the separate [Security-Monitering-Agent repository](https://github.com/vishal-s-se/Security-Monitering-Agent).
 - The dashboard API client does not inject bearer credentials and the dashboard WebSocket hook does not attach a token. Protected dashboard API/WebSocket use requires frontend authentication integration.
 - CSRF middleware is not present. The current API uses bearer headers rather than browser cookies; reassess if cookie authentication is introduced.
 - Revocation storage is in-process and is lost on backend restart. Use a shared session/revocation store before multi-process deployment.
