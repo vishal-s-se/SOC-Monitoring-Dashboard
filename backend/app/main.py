@@ -19,9 +19,11 @@ PUBLIC_PATHS = {"/", "/health", "/health/db"}
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from backend.app.engine.event_bus import event_bus
+    from backend.app.engine.processor import detection_processor
     from backend.app.models.user import User
     from backend.app.services.detection_seeder import seed_detection_catalog
 
+    event_bus.subscribe(detection_processor.handle_new_event)
     event_bus.start()
     try:
         async with SessionLocal() as db:

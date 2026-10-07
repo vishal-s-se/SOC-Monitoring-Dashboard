@@ -59,6 +59,9 @@ class MockSubscriber:
 
 @pytest.mark.asyncio
 async def test_realtime_pipeline(db: AsyncSession, setup_data):
+    from backend.app.engine.event_bus import InMemoryTransport
+    event_bus.set_transport(InMemoryTransport())
+    
     # Setup mock subscriber
     subscriber = MockSubscriber()
     event_bus.subscribe(subscriber)

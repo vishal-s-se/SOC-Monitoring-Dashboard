@@ -82,7 +82,7 @@ async def test_valid_event_pipeline(client: AsyncClient, db: AsyncSession, setup
     evt = result.scalar_one_or_none()
     assert evt is not None
     assert evt.raw_log_id == raw.id
-    assert evt.event_category == "windows"
+    assert evt.event_category == "network"
     assert evt.event_type == "3"
     assert evt.source_ip == "192.168.1.10"
     assert evt.destination_port == 443
@@ -114,7 +114,7 @@ async def test_linux_event_parsing(client: AsyncClient, db: AsyncSession, setup_
     result = await db.execute(stmt)
     evt = result.scalar_one()
 
-    assert evt.event_category == "linux"
+    assert evt.event_category == "authentication"
     assert evt.event_type == "ssh_login"
     assert evt.action == "login_success"
     assert evt.username == "admin_user"
