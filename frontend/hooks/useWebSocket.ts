@@ -28,7 +28,11 @@ export function useWebSocket() {
     setStatus("CONNECTING");
 
     try {
-      const ws = new WebSocket(WS_URL);
+      let url = WS_URL;
+      if (process.env.NEXT_PUBLIC_E2E_TOKEN) {
+        url += `?token=${process.env.NEXT_PUBLIC_E2E_TOKEN}`;
+      }
+      const ws = new WebSocket(url);
 
       ws.onopen = () => {
         if (!isComponentMounted.current) return;

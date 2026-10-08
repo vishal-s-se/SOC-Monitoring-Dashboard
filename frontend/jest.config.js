@@ -7,5 +7,6 @@ module.exports = createJestConfig({
   testEnvironment: 'jest-environment-jsdom',
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/$1'
-  }
+  },
+  testPathIgnorePatterns: ['<rootDir>/e2e/', '<rootDir>/node_modules/']
 })

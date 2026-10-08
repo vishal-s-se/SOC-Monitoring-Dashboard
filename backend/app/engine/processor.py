@@ -37,6 +37,7 @@ class DetectionProcessor:
         ev = Event(
             id=data.get("id", 0),
             event_id=data.get("event_id"),
+            timestamp=datetime.fromisoformat(data.get("timestamp").replace('Z', '+00:00')) if data.get("timestamp") else datetime.now(timezone.utc),
             agent_id=data.get("agent_id"),
             host_id=data.get("host_id"),
             hostname=data.get("hostname"),
