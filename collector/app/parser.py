@@ -10,9 +10,20 @@ def parse_windows_event(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     system = payload.get('System', {})
     event_data = payload.get('EventData', {})
-    event_id = system.get('EventID')
 
-    if event_id:
+    # Support both nested System dict and flat top-level dict
+    raw_event_id = system.get('EventID')
+    if raw_event_id is None:
+        raw_event_id = payload.get('EventID')
+
+    event_id = None
+    try:
+        if raw_event_id is not None:
+            event_id = int(raw_event_id)
+    except (ValueError, TypeError):
+        pass
+
+    if event_id is not None:
         normalized['event_category'] = 'windows'
         normalized['event_type'] = str(event_id)
 
@@ -59,11 +70,45 @@ def parse_windows_event(payload: Dict[str, Any]) -> Dict[str, Any]:
         normalized['source_ip'] = event_data.get('SourceAddress')
 
     level = system.get('Level')
+    if level is None:
+        level = payload.get('Level')
+
     if level:
         if str(level) in ['1', '2', '3']:
             normalized['severity'] = 'HIGH'
         elif str(level) == '4':
             normalized['severity'] = 'INFO'
+
+    # Extract Native Windows Event Identifiers
+    native_identifiers = {}
+    
+    if raw_event_id is not None:
+        native_identifiers['EventID'] = raw_event_id
+        
+    if system.get('EventRecordID') is not None:
+        native_identifiers['EventRecordID'] = system.get('EventRecordID')
+        
+    provider = system.get('Provider', {})
+    if isinstance(provider, dict) and provider.get('Name'):
+        native_identifiers['Provider'] = provider.get('Name')
+    elif isinstance(provider, str):
+        native_identifiers['Provider'] = provider
+        
+    if system.get('Channel'):
+        native_identifiers['Channel'] = system.get('Channel')
+        
+    if system.get('Computer'):
+        native_identifiers['Computer'] = system.get('Computer')
+        
+    time_created = system.get('TimeCreated', {})
+    if isinstance(time_created, dict) and time_created.get('SystemTime'):
+        native_identifiers['TimeCreated'] = time_created.get('SystemTime')
+        
+    if level is not None:
+        native_identifiers['Level'] = level
+
+    if native_identifiers:
+        normalized['native_identifiers'] = native_identifiers
 
     return normalized
 
@@ -72,7 +117,10 @@ def parse_linux_event(payload: Dict[str, Any]) -> Dict[str, Any]:
     normalized = {}
     normalized['event_category'] = 'linux'
 
-    message = payload.get('message', '')
+    message = payload.get('message')
+    if not message:
+        message = payload.get('raw_line', '')
+
     syslog_facility = payload.get('facility', '')
 
     if 'sshd' in message or 'sshd' in payload.get('process', ''):
@@ -90,16 +138,27 @@ def parse_linux_event(payload: Dict[str, Any]) -> Dict[str, Any]:
                 for_idx = parts.index('for')
                 from_idx = parts.index('from')
                 if from_idx > for_idx:
-                    normalized['username'] = parts[for_idx + 1]
-                    normalized['source_ip'] = parts[from_idx + 1]
-            except ValueError:
+                    user_parts = parts[for_idx + 1:from_idx]
+                    if len(user_parts) >= 3 and user_parts[0] == 'invalid' and user_parts[1] == 'user':
+                        normalized['username'] = user_parts[2]
+                    elif len(user_parts) > 0:
+                        normalized['username'] = user_parts[0]
+
+                    ip_candidate = parts[from_idx + 1]
+                    import ipaddress
+                    try:
+                        ipaddress.ip_address(ip_candidate)
+                        normalized['source_ip'] = ip_candidate
+                    except ValueError:
+                        pass
+            except (ValueError, IndexError):
                 pass
 
     if 'sudo' in message or 'sudo' in payload.get('process', ''):
         normalized['event_category'] = 'process'
         normalized['event_type'] = 'sudo'
         normalized['action'] = 'privilege_escalation'
-        
+
     if 'iptables' in message.lower() or 'ufw block' in message.lower():
         normalized['event_category'] = 'firewall'
         normalized['action'] = 'deny'
@@ -109,6 +168,15 @@ def parse_linux_event(payload: Dict[str, Any]) -> Dict[str, Any]:
                 normalized['source_ip'] = message.split('SRC=')[1].split()[0]
             except:
                 pass
+
+    # Extract Native Linux Identifiers
+    native_identifiers = {}
+    for key in ['__CURSOR', '__REALTIME_TIMESTAMP', '__MONOTONIC_TIMESTAMP', '_BOOT_ID', '_HOSTNAME', '_SYSTEMD_UNIT', 'SYSLOG_IDENTIFIER', 'PRIORITY', '_PID', '_UID']:
+        if key in payload:
+            native_identifiers[key] = payload[key]
+            
+    if native_identifiers:
+        normalized['native_identifiers'] = native_identifiers
 
     return normalized
 
@@ -122,9 +190,10 @@ def parse_event_payload(source_type: str, raw_payload: str) -> Dict[str, Any]:
     if not isinstance(payload, dict):
         return {}
 
-    if source_type.lower() in ['windows', 'windows_event', 'sysmon']:
+    source_type_lower = source_type.lower()
+    if source_type_lower.startswith('windows') or source_type_lower == 'sysmon':
         return parse_windows_event(payload)
-    elif source_type.lower() in ['linux', 'syslog', 'journald', 'auth']:
+    elif source_type_lower.startswith('linux') or source_type_lower in ['syslog', 'journald', 'auth']:
         return parse_linux_event(payload)
 
     return {}

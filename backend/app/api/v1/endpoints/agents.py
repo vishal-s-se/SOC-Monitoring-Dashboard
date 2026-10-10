@@ -10,6 +10,7 @@ from backend.app.schemas.agent import Agent
 from backend.app.schemas.pagination import PaginatedResponse
 
 router = APIRouter()
+public_router = APIRouter()
 
 @router.get("/", response_model=PaginatedResponse[Agent])
 async def list_agents(
@@ -33,8 +34,31 @@ async def list_agents(
     stmt = stmt.order_by(AgentModel.registered_at.desc())
     stmt = stmt.offset((page - 1) * page_size).limit(page_size)
 
+    from datetime import datetime, timezone, timedelta
+
     result = await db.execute(stmt)
-    items = result.scalars().all()
+    db_items = result.scalars().all()
+    
+    # Calculate accurate status based on last_heartbeat (5 min threshold)
+    items = []
+    now = datetime.now(timezone.utc)
+    for agent in db_items:
+        # Pydantic schemas will be built from these objects. 
+        # We can dynamically override the status before it gets serialized if we modify the object.
+        # But mutating the SQLAlchemy object might mark it dirty. Let's just update the status logic.
+        if agent.last_heartbeat is None:
+            computed_status = "UNKNOWN"
+        else:
+            # Ensure timezone awareness for comparison
+            hb_time = agent.last_heartbeat if agent.last_heartbeat.tzinfo else agent.last_heartbeat.replace(tzinfo=timezone.utc)
+            if now - hb_time > timedelta(minutes=5):
+                computed_status = "OFFLINE"
+            else:
+                computed_status = "ONLINE"
+                
+        # We temporarily set the status attribute so it serializes correctly.
+        agent.status = computed_status
+        items.append(agent)
 
     return PaginatedResponse(
         items=items,
@@ -49,4 +73,60 @@ async def get_agent(id: int, db: AsyncSession = Depends(get_db)):
     agent = result.scalars().first()
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
+        
+    from datetime import datetime, timezone, timedelta
+    now = datetime.now(timezone.utc)
+    if agent.last_heartbeat is None:
+        agent.status = "UNKNOWN"
+    else:
+        hb_time = agent.last_heartbeat if agent.last_heartbeat.tzinfo else agent.last_heartbeat.replace(tzinfo=timezone.utc)
+        if now - hb_time > timedelta(minutes=5):
+            agent.status = "OFFLINE"
+        else:
+            agent.status = "ONLINE"
+            
     return agent
+
+from backend.app.models.enrollment import EnrollmentCode
+import uuid
+import hashlib
+import datetime
+
+@router.post("/enrollment-code")
+async def create_enrollment_code(
+    target_os: str = Query(..., description="windows or linux"),
+    db: AsyncSession = Depends(get_db)
+):
+    code = str(uuid.uuid4())
+    code_hash = hashlib.sha256(code.encode()).hexdigest()
+    expires_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=24)
+    
+    ec = EnrollmentCode(
+        code_hash=code_hash,
+        target_os=target_os,
+        expires_at=expires_at
+    )
+    db.add(ec)
+    await db.commit()
+    
+    return {"enrollment_code": code, "expires_at": expires_at, "target_os": target_os}
+
+from fastapi.responses import FileResponse
+import os
+
+@public_router.get("/download/{os_type}")
+async def download_agent(os_type: str):
+    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../../artifacts"))
+    if os_type == "windows":
+        file_path = os.path.join(base_dir, "soc-agent-windows.zip")
+        filename = "soc-agent-windows.zip"
+    elif os_type == "linux":
+        file_path = os.path.join(base_dir, "soc-monitor-agent_0.1.0_amd64.deb")
+        filename = "soc-monitor-agent_0.1.0_amd64.deb"
+    else:
+        raise HTTPException(status_code=400, detail="Invalid OS type")
+        
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Artifact not found. Please build and place it in the artifacts directory.")
+        
+    return FileResponse(path=file_path, filename=filename, media_type="application/octet-stream")

@@ -233,7 +233,10 @@ async def get_analytics_telemetry(hours: int = 24, db: AsyncSession = Depends(ge
     sev_res = await db.execute(select(Event.severity, func.count(Event.id)).where(Event.timestamp >= start_time).group_by(Event.severity))
     by_severity = {row[0] or "unknown": row[1] for row in sev_res.all()}
     
-    return MetricTelemetryResponse(total_events=total, by_category=by_category, by_severity=by_severity)
+    os_res = await db.execute(select(Event.operating_system, func.count(Event.id)).where(Event.timestamp >= start_time).group_by(Event.operating_system))
+    by_os = {row[0] or "unknown": row[1] for row in os_res.all()}
+    
+    return MetricTelemetryResponse(total_events=total, by_category=by_category, by_severity=by_severity, by_os=by_os)
 
 @router.get("/alerts", response_model=MetricAlertsResponse)
 async def get_analytics_alerts(hours: int = 24, db: AsyncSession = Depends(get_db)):
@@ -266,7 +269,11 @@ async def get_analytics_investigations(hours: int = 24, db: AsyncSession = Depen
 @router.get("/agents", response_model=MetricAgentHealthResponse)
 async def get_analytics_agents(db: AsyncSession = Depends(get_db)):
     total = (await db.execute(select(func.count(Agent.id)))).scalar() or 0
-    online = (await db.execute(select(func.count(Agent.id)).where(Agent.status == "ONLINE"))).scalar() or 0
+    
+    now = datetime.now(timezone.utc)
+    threshold = now - timedelta(minutes=5)
+    
+    online = (await db.execute(select(func.count(Agent.id)).where(Agent.last_heartbeat >= threshold))).scalar() or 0
     offline = total - online
     
     return MetricAgentHealthResponse(total_agents=total, online_agents=online, offline_agents=offline)

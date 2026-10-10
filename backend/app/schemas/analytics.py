@@ -105,6 +105,7 @@ class MetricTelemetryResponse(BaseModel):
     total_events: int
     by_category: Dict[str, int]
     by_severity: Dict[str, int]
+    by_os: Optional[Dict[str, int]] = None
 
 class MetricAlertsResponse(BaseModel):
     total_alerts: int

@@ -52,8 +52,9 @@ async def get_health_overview(db: AsyncSession = Depends(get_db)):
     
     overall_status = "HEALTHY" if db_status == "HEALTHY" else "DEGRADED"
     
-    # Active Agents
-    agents_count = (await db.execute(select(func.count(Agent.id)).where(Agent.status == "ONLINE"))).scalar() or 0
+    # Active Agents (using 5 minute heartbeat threshold)
+    threshold = now - timedelta(minutes=5)
+    agents_count = (await db.execute(select(func.count(Agent.id)).where(Agent.last_heartbeat >= threshold))).scalar() or 0
     # Active Hosts
     hosts_count = (await db.execute(select(func.count(Host.id)).where(Host.status == "ONLINE"))).scalar() or 0
     
