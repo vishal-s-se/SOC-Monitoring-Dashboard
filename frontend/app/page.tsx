@@ -41,7 +41,7 @@ export default function OverviewPage() {
         api.get<any>('/analytics/alerts?hours=24'),
         api.get<any>('/analytics/agents'),
         api.get<any>('/analytics/timeseries?metric=events&hours=24'),
-        api.get<any>('/alerts?limit=5')
+        api.get<any>('/alerts/?limit=5')
       ])
 
       setOverview(overviewRes)

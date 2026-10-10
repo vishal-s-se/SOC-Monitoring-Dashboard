@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     SECRET_KEY: str = Field(default_factory=lambda: secrets.token_urlsafe(32))
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
 
-    CORS_ORIGINS: str = "http://localhost:3000"
+    CORS_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000"
 
     MAX_REQUEST_BODY_BYTES: int = 1_048_576
     RATE_LIMIT_ENABLED: bool = True

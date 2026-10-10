@@ -3,12 +3,15 @@
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { usePathname } from "next/navigation";
 
 export default function TopBar() {
+  const pathname = usePathname();
   const { status: wsStatus } = useWebSocket();
   const [apiStatus, setApiStatus] = useState<"ONLINE" | "OFFLINE" | "CHECKING">("CHECKING");
 
   useEffect(() => {
+    if (pathname === '/login') return;
     // We check API health occasionally
     const checkApi = async () => {
       try {
@@ -21,7 +24,9 @@ export default function TopBar() {
     checkApi();
     const interval = setInterval(checkApi, 10000);
     return () => clearInterval(interval);
-  }, []);
+  }, [pathname]);
+
+  if (pathname === '/login') return null;
 
   return (
     <header className="h-16 bg-gray-900 border-b border-gray-800 flex items-center justify-between px-6 shrink-0 text-white">
@@ -56,8 +61,23 @@ export default function TopBar() {
         </div>
 
         {/* User Profile */}
-        <div className="h-8 w-8 rounded-full bg-blue-600 flex items-center justify-center text-sm font-semibold cursor-pointer">
-          A
+        <div className="flex items-center space-x-3">
+          <div className="h-8 w-8 rounded-full bg-blue-600 flex items-center justify-center text-sm font-semibold cursor-pointer">
+            A
+          </div>
+          <button 
+            onClick={async () => {
+              try {
+                await api.post('/auth/logout', {});
+              } catch (e) {
+                console.error('Logout failed', e);
+              }
+              window.location.href = '/login';
+            }}
+            className="text-xs text-gray-400 hover:text-white transition-colors border border-gray-700 hover:border-gray-500 px-2 py-1 rounded"
+          >
+            Logout
+          </button>
         </div>
       </div>
     </header>
