@@ -87,6 +87,53 @@ async def get_agent(id: int, db: AsyncSession = Depends(get_db)):
             
     return agent
 
+
+@router.patch("/{id}/retire", status_code=200)
+async def retire_agent(
+    id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """Soft-retire an agent in SOC Monitor. Marks it RETIRED and records the action.
+    This does NOT uninstall the software from the endpoint.
+    Historical events, logs, and investigations are preserved.
+    The running agent will continue sending heartbeats but be ignored by dashboards once retired.
+    """
+    result = await db.execute(select(AgentModel).where(AgentModel.id == id))
+    agent = result.scalars().first()
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    if agent.status == "RETIRED":
+        raise HTTPException(status_code=409, detail="Agent is already retired.")
+
+    prev_status = agent.status
+    agent.status = "RETIRED"
+    await db.commit()
+
+    from backend.app.core.audit import audit
+    from backend.app.engine.event_bus import event_bus
+    audit(
+        "agent_retired",
+        actor="dashboard_user",
+        outcome="success",
+        agent_id=agent.agent_id,
+        hostname=agent.hostname,
+        previous_status=prev_status,
+    )
+    await event_bus.publish("agent_status_changed", {
+        "agent_id": agent.agent_id,
+        "hostname": agent.hostname,
+        "status": "RETIRED",
+        "previous_status": prev_status,
+    })
+
+    return {
+        "status": "retired",
+        "agent_id": agent.agent_id,
+        "hostname": agent.hostname,
+        "note": "Agent retired in SOC Monitor. Historical data preserved. Uninstall the agent software locally to stop collection.",
+    }
+
 from backend.app.models.enrollment import EnrollmentCode
 import uuid
 import hashlib
@@ -114,15 +161,22 @@ async def create_enrollment_code(
 from fastapi.responses import FileResponse
 import os
 
-@public_router.get("/download/{os_type}")
+@public_router.get("/download/{os_type:path}")
 async def download_agent(os_type: str):
     base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../../artifacts"))
+    
     if os_type == "windows":
         file_path = os.path.join(base_dir, "soc-agent-windows.zip")
         filename = "soc-agent-windows.zip"
     elif os_type == "linux":
         file_path = os.path.join(base_dir, "soc-monitor-agent_0.1.0_amd64.deb")
         filename = "soc-monitor-agent_0.1.0_amd64.deb"
+    elif os_type == "script/windows/install":
+        file_path = os.path.join(base_dir, "Install-SOCAgent.ps1")
+        filename = "Install-SOCAgent.ps1"
+    elif os_type == "script/windows/uninstall":
+        file_path = os.path.join(base_dir, "Uninstall-SOCAgent.ps1")
+        filename = "Uninstall-SOCAgent.ps1"
     else:
         raise HTTPException(status_code=400, detail="Invalid OS type")
         
