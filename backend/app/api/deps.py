@@ -30,6 +30,8 @@ async def get_current_user(
     )
     raw = token
     if not raw:
+        raw = request.cookies.get("soc_session")
+    if not raw:
         header = request.headers.get("authorization") or ""
         if header.lower().startswith("bearer "):
             raw = header.split(" ", 1)[1].strip()

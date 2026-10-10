@@ -48,7 +48,7 @@ manager = ConnectionManager()
 
 
 async def _authenticate_ws(websocket: WebSocket) -> User | None:
-    token = websocket.query_params.get("token") or ""
+    token = websocket.query_params.get("token") or websocket.cookies.get("soc_session") or ""
     if not token:
         auth = websocket.headers.get("authorization") or ""
         if auth.lower().startswith("bearer "):

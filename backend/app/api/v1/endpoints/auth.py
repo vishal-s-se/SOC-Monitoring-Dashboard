@@ -41,6 +41,8 @@ class UserMe(BaseModel):
         from_attributes = True
 
 
+from fastapi.responses import JSONResponse, Response
+
 @router.post("/login", response_model=TokenResponse)
 async def login(payload: LoginRequest, request: Request, db: AsyncSession = Depends(get_db)):
     ip = client_ip(request)
@@ -66,14 +68,30 @@ async def login(payload: LoginRequest, request: Request, db: AsyncSession = Depe
     await db.commit()
     token = create_access_token(str(user.id))
     audit("authentication_success", actor=user.username, outcome="success")
-    return TokenResponse(access_token=token)
+    
+    response = JSONResponse(content={"access_token": token, "token_type": "bearer"})
+    # Session cookie (e.g. 8 hours)
+    from backend.app.core.config import settings
+    response.set_cookie(
+        key="soc_session",
+        value=token,
+        httponly=True,
+        max_age=28800,
+        samesite="lax",
+        secure=settings.HTTPS_ENABLED,
+        path="/"
+    )
+    return response
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(request: Request, current_user: User = Depends(get_current_active_user)):
     revoke_token(getattr(request.state, "token_jti", None))
     audit("session_invalidation", actor=current_user.username, outcome="success")
-    return None
+    
+    response = Response(status_code=status.HTTP_204_NO_CONTENT)
+    response.delete_cookie(key="soc_session", path="/", httponly=True, samesite="lax")
+    return response
 
 
 @router.get("/me", response_model=UserMe)

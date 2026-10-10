@@ -44,9 +44,7 @@ export default function LoginPage() {
 
   // Redirect to dashboard if already authenticated
   useEffect(() => {
-    if (typeof window !== "undefined" && localStorage.getItem("soc_access_token")) {
-      router.push('/')
-    }
+    // Middleware handles initial redirect, but we can also use an API check if we want
   }, [router])
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -59,11 +57,9 @@ export default function LoginPage() {
     setLoading(true)
     setError('')
     try {
-      const res = await api.post<any>('/auth/login', { username, password })
-      if (res.access_token) {
-        localStorage.setItem("soc_access_token", res.access_token)
-        router.push('/')
-      }
+      // The API call now sets the HttpOnly cookie automatically
+      await api.post<any>('/auth/login', { username, password })
+      window.location.href = '/' // Force a full reload to let middleware and components pick up the cookie
     } catch (err: any) {
       // Avoid revealing if a username specifically exists vs bad password
       setError(err.message === "Invalid username or password" ? "Invalid credentials. Please try again." : (err.message || "Authentication failed. Please check your connection."))

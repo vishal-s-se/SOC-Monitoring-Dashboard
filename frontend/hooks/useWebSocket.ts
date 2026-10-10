@@ -30,12 +30,8 @@ export function useWebSocket() {
     try {
       let url = WS_URL;
       const testToken = process.env.NEXT_PUBLIC_E2E_TOKEN;
-      let token = testToken;
-      if (!token && typeof window !== "undefined") {
-        token = localStorage.getItem("soc_access_token") || undefined;
-      }
-      if (token) {
-        url += `?token=${token}`;
+      if (testToken) {
+        url += `?token=${testToken}`;
       }
       const ws = new WebSocket(url);
 
