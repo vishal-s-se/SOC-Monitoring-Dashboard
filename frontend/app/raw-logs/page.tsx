@@ -9,7 +9,7 @@ import { SeverityBadge } from '@/components/ui/SeverityBadge'
 import { DataTable } from '@/components/ui/DataTable'
 import { Pagination } from '@/components/ui/Pagination'
 import { useDebounce } from '@/hooks/useDebounce'
-import { FilterBar, FilterInput, FilterSelect } from '@/components/ui/Filters'
+import { FilterBar, FilterInput, FilterSelect } from '@/components/ui/FilterBar'
 import { AddToInvestigationModal } from '@/components/ui/AddToInvestigationModal'
 
 export default function UnifiedExplorerPage() {
