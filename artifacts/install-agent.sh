@@ -4,9 +4,12 @@
 # ==============================================================================
 set -euo pipefail
 
-COLLECTOR_HOST="${1:-}"
-COLLECTOR_PORT="${2:-5000}"
-AUTH_TOKEN="${3:-}"
+# 0. Safety cleanup trap: Always wipe token from process environment on exit
+cleanup() {
+    unset AGENTAUTHTOKEN 2>/dev/null || true
+    unset AUTH_TOKEN 2>/dev/null || true
+}
+trap cleanup EXIT INT TERM
 
 echo -e "\033[1;36m=====================================================\033[0m"
 echo -e "\033[1;36m SOC Monitor Agent — Linux / Kali Installer          \033[0m"
@@ -25,7 +28,40 @@ if [ "$ARCH" != "amd64" ] && [ "$ARCH" != "x86_64" ]; then
     exit 1
 fi
 
-# 3. Prompt interactively for Collector Host if not provided
+# 3. Parameter parsing: Support flags (--host, --port, --token), env vars, and positional args
+COLLECTOR_HOST="${COLLECTOR_HOST:-}"
+COLLECTOR_PORT="${COLLECTOR_PORT:-5000}"
+AUTH_TOKEN="${AGENTAUTHTOKEN:-}"
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --host|-h)
+            COLLECTOR_HOST="${2:-}"
+            shift 2
+            ;;
+        --port|-p)
+            COLLECTOR_PORT="${2:-5000}"
+            shift 2
+            ;;
+        --token|-t)
+            AUTH_TOKEN="${2:-}"
+            shift 2
+            ;;
+        *)
+            # Positional fallback: host [port] [token]
+            if [ -z "$COLLECTOR_HOST" ]; then
+                COLLECTOR_HOST="$1"
+            elif [ "$COLLECTOR_PORT" = "5000" ] && [ -z "$AUTH_TOKEN" ]; then
+                COLLECTOR_PORT="$1"
+            elif [ -z "$AUTH_TOKEN" ]; then
+                AUTH_TOKEN="$1"
+            fi
+            shift
+            ;;
+    esac
+done
+
+# If Collector Host not provided, prompt interactively
 if [ -z "$COLLECTOR_HOST" ]; then
     echo -e "\033[1;33mEnter the SOC Monitor Collector IP or Hostname:\033[0m"
     echo -e "\033[0;37m(Use 192.168.56.1 for VirtualBox Host-Only or your SOC server IP. Do not use localhost unless running on the same machine)\033[0m"
@@ -33,22 +69,28 @@ if [ -z "$COLLECTOR_HOST" ]; then
     COLLECTOR_HOST="${INPUT_HOST:-192.168.56.1}"
 fi
 
-# 4. Prompt securely for Enrollment Token if not provided
+# 4. Token Resolution: Use AGENTAUTHTOKEN or --token first; if missing, prompt securely
 if [ -z "$AUTH_TOKEN" ]; then
     # Check if there is an existing config with a token
     if [ -f "/etc/soc-monitor-agent/agent.yml" ]; then
-        echo -e "\033[1;32mExisting configuration detected. Press Enter to keep current token, or paste a new one.\033[0m"
-        read -rsp "Enrollment Token (hidden): " AUTH_TOKEN
+        echo -e "\033[1;32mExisting configuration detected. Press Enter to keep current configuration, or enter a new token.\033[0m"
+        read -rsp "Enrollment Token (hidden): " INPUT_TOKEN
         echo ""
+        if [ -n "$INPUT_TOKEN" ]; then
+            AUTH_TOKEN="$INPUT_TOKEN"
+        else
+            AUTH_TOKEN=$(grep "auth_token:" /etc/soc-monitor-agent/agent.yml | head -n1 | awk '{print $2}' | tr -d '"'\'')
+        fi
     else
         echo -e "\033[1;33mPlease enter your one-time enrollment token from the SOC Monitor dashboard:\033[0m"
         read -rsp "Enrollment Token (hidden): " AUTH_TOKEN
         echo ""
-        if [ -z "$AUTH_TOKEN" ]; then
-            echo -e "\033[1;31mError: Enrollment token cannot be empty.\033[0m" >&2
-            exit 1
-        fi
     fi
+fi
+
+if [ -z "$AUTH_TOKEN" ]; then
+    echo -e "\033[1;31mError: Enrollment token cannot be empty. Aborting installation.\033[0m" >&2
+    exit 1
 fi
 
 # 5. Check package availability
@@ -175,7 +217,13 @@ systemctl restart soc-agent
 
 # 10. Verify service status
 sleep 2
-if systemctl is-active --quiet soc-agent; then
+if systemctl is-active --quiet soc-agent 2>/dev/null; then
+    # Check journalctl for enrollment token rejection
+    if journalctl -u soc-agent.service -n 25 --no-pager 2>/dev/null | grep -Eq "Invalid or expired enrollment code|401 Client Error|registration rejected"; then
+        echo -e "\033[1;31mError: Enrollment failed: The server rejected the enrollment token as invalid or expired.\033[0m" >&2
+        echo -e "\033[1;31mTokens are single-use and expire after 24 hours. Please generate a fresh token from the SOC Monitor dashboard.\033[0m" >&2
+        exit 1
+    fi
     echo -e "\033[1;32m=====================================================\033[0m"
     echo -e "\033[1;32m SOC Monitor Agent successfully installed and running!\033[0m"
     echo -e "\033[1;32m Service      : soc-agent.service (active)\033[0m"
@@ -184,6 +232,17 @@ if systemctl is-active --quiet soc-agent; then
     echo -e "\033[1;32m Uninstaller  : /opt/soc-monitor-agent/uninstall-agent.sh\033[0m"
     echo -e "\033[1;32m=====================================================\033[0m"
 else
-    echo -e "\033[1;31mWarning: soc-agent service is not active. Check journalctl -u soc-agent for diagnostics.\033[0m" >&2
-    exit 1
+    # Check if running in WSL without active systemd
+    if (grep -qi microsoft /proc/version 2>/dev/null || [ -n "${WSL_DISTRO_NAME:-}" ]) && [ ! -d /run/systemd/system ]; then
+        echo -e "\033[1;33m=====================================================\033[0m"
+        echo -e "\033[1;33m Notice: WSL detected without active systemd.        \033[0m"
+        echo -e "\033[1;33m Configuration and agent binaries installed cleanly. \033[0m"
+        echo -e "\033[1;33m To run the agent process in background, execute:   \033[0m"
+        echo -e "\033[1;37m   sudo /opt/soc-monitor-agent/soc-agent --config /etc/soc-monitor-agent/agent.yml &\033[0m"
+        echo -e "\033[0;37m Or enable systemd in /etc/wsl.conf under [boot] systemd=true and restart WSL.\033[0m"
+        echo -e "\033[1;33m=====================================================\033[0m"
+    else
+        echo -e "\033[1;31mWarning: soc-agent service is not active. Check journalctl -u soc-agent for diagnostics.\033[0m" >&2
+        exit 1
+    fi
 fi

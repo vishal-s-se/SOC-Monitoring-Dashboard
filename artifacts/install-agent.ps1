@@ -18,33 +18,60 @@ Write-Host "==========================================" -ForegroundColor Cyan
 Write-Host " SOC Monitor Agent Windows Installer      " -ForegroundColor Cyan
 Write-Host "==========================================" -ForegroundColor Cyan
 
+function Cleanup-TokenEnvironment {
+    Remove-Item Env:AGENTAUTHTOKEN -ErrorAction SilentlyContinue
+    $env:AGENTAUTHTOKEN = $null
+}
+
+try {
 # 1. Administrator check
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $isAdmin) {
+    Cleanup-TokenEnvironment
     Write-Error "Administrator privileges required. Please re-run PowerShell as Administrator."
     exit 1
 }
 
-# 2. Interactive prompt for token if missing and not in non-interactive repair mode
+# 2. Token resolution & validation
+# Priority 1: $AuthToken parameter if passed explicitly
+# Priority 2: $env:AGENTAUTHTOKEN environment variable
+# Priority 3: Interactive secure masked prompt (if not in Repair mode with existing config)
+if ([string]::IsNullOrWhiteSpace($AuthToken) -and (-not [string]::IsNullOrWhiteSpace($env:AGENTAUTHTOKEN))) {
+    $AuthToken = $env:AGENTAUTHTOKEN.Trim()
+    if ($AuthToken -eq "System.Security.SecureString") {
+        Cleanup-TokenEnvironment
+        Write-Error "Invalid token format: AGENTAUTHTOKEN contains literal 'System.Security.SecureString'. Please set AGENTAUTHTOKEN as a plain text string or leave it unset to prompt interactively."
+        exit 1
+    }
+} elseif (-not [string]::IsNullOrWhiteSpace($AuthToken)) {
+    $AuthToken = $AuthToken.Trim()
+}
+
 if ([string]::IsNullOrWhiteSpace($AuthToken)) {
     # Check if this is an upgrade/repair of an existing configured installation
     if ($Repair -and (Test-Path $ConfigPath)) {
         Write-Host "Repair mode: Preserving existing configuration and agent identity." -ForegroundColor Green
     } else {
         Write-Host "Please enter your one-time enrollment token from the SOC Monitor dashboard." -ForegroundColor Yellow
-        $secureInput = Read-Host "Enrollment Token" -AsSecureString
-        $BSTR = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureInput)
-        $AuthToken = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($BSTR)
-        [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($BSTR)
-        $AuthToken = $AuthToken.Trim()
+        $secureInput = Read-Host "Enrollment Token (hidden)" -AsSecureString
+        if ($secureInput) {
+            $BSTR = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureInput)
+            try {
+                $AuthToken = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($BSTR)
+            } finally {
+                [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($BSTR)
+            }
+            if ($AuthToken) {
+                $AuthToken = $AuthToken.Trim()
+            }
+        }
 
         if ([string]::IsNullOrWhiteSpace($AuthToken)) {
+            Cleanup-TokenEnvironment
             Write-Error "Enrollment token cannot be empty. Aborting installation."
             exit 1
         }
     }
-} else {
-    $AuthToken = $AuthToken.Trim()
 }
 
 # 3. Locate or download package relative to script directory
@@ -197,8 +224,21 @@ for ($i = 0; $i -lt $timeout; $i++) {
 }
 
 if (-not $running) {
+    Cleanup-TokenEnvironment
     Write-Error "$ServiceName failed to reach 'Running' state. Check '$ProgramDataPath\service.log' for diagnostic details."
     exit 1
+}
+
+# Verify enrollment registration in agent.log if available
+Start-Sleep -Seconds 2
+$AgentLogPath = Join-Path $ProgramDataPath "agent.log"
+if (Test-Path $AgentLogPath) {
+    $recentLog = Get-Content -Tail 25 -Path $AgentLogPath -ErrorAction SilentlyContinue | Out-String
+    if ($recentLog -match "Invalid or expired enrollment code|401 Client Error|registration rejected") {
+        Cleanup-TokenEnvironment
+        Write-Error "Enrollment failed: The server rejected the enrollment token as invalid or expired. Enrollment tokens are single-use and expire after 24 hours. Please generate a fresh token from the SOC Monitor dashboard."
+        exit 1
+    }
 }
 
 Write-Host "============================================================" -ForegroundColor Green
@@ -207,3 +247,8 @@ Write-Host " Service Name : $ServiceName (Startup: Automatic)           " -Foreg
 Write-Host " State Dir    : $ProgramDataPath                            " -ForegroundColor Green
 Write-Host " Uninstaller  : $InstalledUninstaller                       " -ForegroundColor Green
 Write-Host "============================================================" -ForegroundColor Green
+}
+finally {
+    Cleanup-TokenEnvironment
+    $AuthToken = $null
+}

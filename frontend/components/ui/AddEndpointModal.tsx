@@ -172,9 +172,12 @@ export function AddEndpointModal({ isOpen, onClose }: { isOpen: boolean; onClose
   if (!isOpen) return null
 
   // Windows Commands
-  const winInteractiveOneLiner = `Invoke-WebRequest -Uri "http://${collectorHost}:${collectorPort}/api/v1/agents/download/install-agent.ps1" -OutFile "install-agent.ps1"; .\\install-agent.ps1 -CollectorHost "${collectorHost}" -CollectorPort ${collectorPort}`
+  const winInteractiveOneLiner = `$env:AGENTAUTHTOKEN = Read-Host "Paste enrollment token"; try { Invoke-WebRequest -Uri "http://${collectorHost}:${collectorPort}/api/v1/agents/download/install-agent.ps1" -OutFile "install-agent.ps1"; .\\install-agent.ps1 -CollectorHost "${collectorHost}" -CollectorPort ${collectorPort} } finally { Remove-Item Env:AGENTAUTHTOKEN -ErrorAction SilentlyContinue }`
   
-  const winSilentOneLiner = `Invoke-WebRequest -Uri "http://${collectorHost}:${collectorPort}/api/v1/agents/download/install-agent.ps1" -OutFile "install-agent.ps1"; .\\install-agent.ps1 -CollectorHost "${collectorHost}" -CollectorPort ${collectorPort} -AuthToken "${code || '<PASTE_TOKEN>'}"`
+  const winSilentOneLiner = `$env:AGENTAUTHTOKEN = "${code || '<PASTE_TOKEN>'}"; try { Invoke-WebRequest -Uri "http://${collectorHost}:${collectorPort}/api/v1/agents/download/install-agent.ps1" -OutFile "install-agent.ps1"; .\\install-agent.ps1 -CollectorHost "${collectorHost}" -CollectorPort ${collectorPort} } finally { Remove-Item Env:AGENTAUTHTOKEN -ErrorAction SilentlyContinue }`
+
+  const winDirectInstallCmd = `# Alternative: run installer directly (prompts securely with hidden input if AGENTAUTHTOKEN is unset)
+Invoke-WebRequest -Uri "http://${collectorHost}:${collectorPort}/api/v1/agents/download/install-agent.ps1" -OutFile "install-agent.ps1"; .\\install-agent.ps1 -CollectorHost "${collectorHost}" -CollectorPort ${collectorPort}`
 
   const winDownloadCmd = `# Download installer script (PowerShell as Administrator)
 Invoke-WebRequest -Uri "http://${collectorHost}:${collectorPort}/api/v1/agents/download/install-agent.ps1" -OutFile "install-agent.ps1"`
@@ -193,9 +196,12 @@ Get-Content -Tail 20 "C:\\ProgramData\\SOCMonitorAgent\\agent.log"`
 & "C:\\ProgramData\\SOCMonitorAgent\\uninstall-agent.ps1" -FullCleanup`
 
   // Linux / Kali Commands
-  const linuxInteractiveOneLiner = `curl -fsSL "http://${collectorHost}:${collectorPort}/api/v1/agents/download/install-agent.sh" -o install-agent.sh && chmod +x install-agent.sh && sudo ./install-agent.sh --host "${collectorHost}" --port ${collectorPort}`
+  const linuxInteractiveOneLiner = `read -rsp "Paste enrollment token: " AGENTAUTHTOKEN && echo && curl -fsSL "http://${collectorHost}:${collectorPort}/api/v1/agents/download/install-agent.sh" -o install-agent.sh && chmod +x install-agent.sh && sudo AGENTAUTHTOKEN="$AGENTAUTHTOKEN" ./install-agent.sh --host "${collectorHost}" --port ${collectorPort}; unset AGENTAUTHTOKEN`
 
-  const linuxSilentOneLiner = `curl -fsSL "http://${collectorHost}:${collectorPort}/api/v1/agents/download/install-agent.sh" -o install-agent.sh && chmod +x install-agent.sh && sudo ./install-agent.sh --host "${collectorHost}" --port ${collectorPort} --token "${code || '<PASTE_TOKEN>'}"`
+  const linuxSilentOneLiner = `curl -fsSL "http://${collectorHost}:${collectorPort}/api/v1/agents/download/install-agent.sh" -o install-agent.sh && chmod +x install-agent.sh && sudo AGENTAUTHTOKEN="${code || '<PASTE_TOKEN>'}" ./install-agent.sh --host "${collectorHost}" --port ${collectorPort}`
+
+  const linuxDirectInstallCmd = `# Alternative: run installer directly (prompts secretly for token if AGENTAUTHTOKEN is unset)
+curl -fsSL "http://${collectorHost}:${collectorPort}/api/v1/agents/download/install-agent.sh" -o install-agent.sh && chmod +x install-agent.sh && sudo ./install-agent.sh --host "${collectorHost}" --port ${collectorPort}`
 
   const linuxDownloadCmd = `# 1. Download installer script
 curl -fsSL "http://${collectorHost}:${collectorPort}/api/v1/agents/download/install-agent.sh" -o install-agent.sh
@@ -215,14 +221,14 @@ sudo /opt/soc-monitor-agent/uninstall-agent.sh
 sudo /opt/soc-monitor-agent/uninstall-agent.sh --full`
 
   // WSL Commands
-  const wslInteractiveOneLiner = `curl -fsSL "http://${collectorHost}:${collectorPort}/api/v1/agents/download/install-agent.sh" -o install-agent.sh && chmod +x install-agent.sh && sudo ./install-agent.sh --host "${collectorHost}" --port ${collectorPort}`
+  const wslInteractiveOneLiner = `read -rsp "Paste enrollment token: " AGENTAUTHTOKEN && echo && curl -fsSL "http://${collectorHost}:${collectorPort}/api/v1/agents/download/install-agent.sh" -o install-agent.sh && chmod +x install-agent.sh && sudo AGENTAUTHTOKEN="$AGENTAUTHTOKEN" ./install-agent.sh --host "${collectorHost}" --port ${collectorPort}; unset AGENTAUTHTOKEN`
 
   const wslManualStartCmd = `# If systemd is not enabled in WSL, start manually in background:
 sudo /opt/soc-monitor-agent/soc-agent --config /etc/soc-monitor-agent/agent.yml &`
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm overflow-y-auto">
-      <div className="bg-gray-900 border border-gray-800 rounded-xl shadow-2xl w-full max-w-3xl max-h-[92vh] flex flex-col overflow-hidden my-auto animate-in fade-in duration-150">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/75 backdrop-blur-sm overflow-y-auto">
+      <div className="bg-gray-900 border border-gray-800 rounded-xl shadow-2xl w-[94vw] lg:w-[75vw] max-w-5xl 2xl:max-w-6xl max-h-[90vh] flex flex-col overflow-hidden my-auto animate-in fade-in duration-150">
         
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800 bg-gray-950/80 shrink-0">
@@ -443,6 +449,17 @@ sudo /opt/soc-monitor-agent/soc-agent --config /etc/soc-monitor-agent/agent.yml 
                 <CodeBlock code={winSilentOneLiner} label="PowerShell (Admin) - Silent" />
               </div>
 
+              {/* Direct Script Run */}
+              <div>
+                <span className="text-xs font-semibold text-gray-300 uppercase tracking-wider">
+                  Option C — Direct Script Run (In-Script Hidden Prompt)
+                </span>
+                <p className="text-[11px] text-gray-400 mb-1.5">
+                  Downloads and executes the installer; script prompts secretly with masked input if AGENTAUTHTOKEN is not set:
+                </p>
+                <CodeBlock code={winDirectInstallCmd} label="PowerShell (Admin) - Direct Run" />
+              </div>
+
               {/* Verification & Status */}
               <div>
                 <span className="text-xs font-semibold text-gray-300 uppercase tracking-wider">
@@ -508,6 +525,17 @@ sudo /opt/soc-monitor-agent/soc-agent --config /etc/soc-monitor-agent/agent.yml 
                 <CodeBlock code={linuxSilentOneLiner} label="Kali / Linux Bash - Silent" />
               </div>
 
+              {/* Option C: Direct Script Run */}
+              <div>
+                <span className="text-xs font-semibold text-gray-300 uppercase tracking-wider">
+                  Option C — Direct Script Run (In-Script Hidden Prompt)
+                </span>
+                <p className="text-[11px] text-gray-400 mb-1.5">
+                  Downloads and executes the installer; script prompts secretly without echoing if AGENTAUTHTOKEN is not set:
+                </p>
+                <CodeBlock code={linuxDirectInstallCmd} label="Kali / Linux Bash - Direct Run" />
+              </div>
+
               {/* Verification */}
               <div>
                 <span className="text-xs font-semibold text-gray-300 uppercase tracking-wider">
@@ -535,22 +563,38 @@ sudo /opt/soc-monitor-agent/soc-agent --config /etc/soc-monitor-agent/agent.yml 
           {/* TAB 3: WSL */}
           {activeTab === 'wsl' && (
             <div className="space-y-4">
-              <div className="p-3 bg-purple-950/30 border border-purple-600/30 rounded-lg text-xs text-purple-200 space-y-1">
+              <div className="p-3.5 bg-purple-950/20 border border-purple-600/30 rounded-lg text-xs text-purple-200 space-y-2.5">
                 <div className="font-semibold text-purple-300 flex items-center space-x-1.5">
                   <span>ℹ️</span>
-                  <span>Windows Subsystem for Linux (WSL)</span>
+                  <span>Understanding Endpoint Monitoring Scopes</span>
                 </div>
-                <p className="text-gray-300 text-[11px] leading-relaxed">
-                  Monitors logs inside your WSL Linux instance. Note: To monitor the Windows host itself, use the <strong>Windows tab</strong> instead.
-                </p>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 text-[11px]">
+                  <div className="p-2.5 bg-black/40 rounded border border-purple-800/30">
+                    <div className="font-semibold text-blue-300 mb-1">🪟 Native Windows Host</div>
+                    <p className="text-gray-300">Monitored via the <strong>Windows tab</strong> in PowerShell as Admin. Collects Windows Event Logs (4624, 4625, Sysmon) and host metrics.</p>
+                  </div>
+                  <div className="p-2.5 bg-black/40 rounded border border-purple-800/30">
+                    <div className="font-semibold text-blue-300 mb-1">🐧 Native Kali / Linux VM</div>
+                    <p className="text-gray-300">Monitored via the <strong>Linux tab</strong> inside your VM. Auto-starts via <code className="text-gray-200">soc-agent.service</code> systemd on VM boot.</p>
+                  </div>
+                  <div className="p-2.5 bg-black/40 rounded border border-purple-800/40">
+                    <div className="font-semibold text-purple-300 mb-1">💻 WSL Linux Subsystem</div>
+                    <p className="text-gray-300">Monitors <strong>WSL Linux distro only</strong> (/var/log/auth.log, syslog). <em>Installing in WSL does not monitor the host Windows OS.</em></p>
+                  </div>
+                </div>
               </div>
 
               <div>
-                <span className="text-xs font-semibold text-gray-300 uppercase tracking-wider">
-                  Step 1 — Install inside WSL Terminal
-                </span>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-semibold text-gray-300 uppercase tracking-wider">
+                    Step 1 — Install inside WSL Terminal (Hidden Token Prompt)
+                  </span>
+                  <span className="text-[10px] text-emerald-400 bg-emerald-950/60 border border-emerald-800 px-1.5 py-0.2 rounded">
+                    Recommended • Secure
+                  </span>
+                </div>
                 <p className="text-[11px] text-gray-400 mb-1.5">
-                  Execute the installer in your WSL terminal:
+                  Execute in your WSL distro terminal. Passes the enrollment token securely via AGENTAUTHTOKEN without recording credentials in bash history:
                 </p>
                 <CopyAllButton fullText={wslInteractiveOneLiner} label="WSL One-Liner" />
                 <CodeBlock code={wslInteractiveOneLiner} label="WSL Bash - Installer" />
@@ -558,10 +602,10 @@ sudo /opt/soc-monitor-agent/soc-agent --config /etc/soc-monitor-agent/agent.yml 
 
               <div>
                 <span className="text-xs font-semibold text-gray-300 uppercase tracking-wider">
-                  Step 2 — Service Execution Note
+                  Step 2 — Service Execution & Background Mode
                 </span>
                 <p className="text-[11px] text-gray-400 mb-1.5">
-                  If systemd is enabled in WSL (<code className="text-gray-300">/etc/wsl.conf</code> [boot] systemd=true), it runs as a service automatically. Otherwise, run manually:
+                  If systemd is enabled in WSL (<code className="text-gray-300">/etc/wsl.conf</code> with <code className="text-gray-300">[boot] systemd=true</code>), the agent starts automatically. Otherwise, run in the background:
                 </p>
                 <CodeBlock code={wslManualStartCmd} label="WSL Bash - Background Process" />
               </div>

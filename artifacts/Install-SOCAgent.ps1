@@ -20,11 +20,16 @@ if (-not $isAdmin) {
     exit 1
 }
 
-# 2. Token handling: Trim whitespace and warn if empty
-$AuthToken = $AuthToken.Trim()
+# 2. Token handling: Support AGENTAUTHTOKEN environment variable, then trim
+if ([string]::IsNullOrWhiteSpace($AuthToken) -and (-not [string]::IsNullOrWhiteSpace($env:AGENTAUTHTOKEN))) {
+    $AuthToken = $env:AGENTAUTHTOKEN.Trim()
+} elseif (-not [string]::IsNullOrWhiteSpace($AuthToken)) {
+    $AuthToken = $AuthToken.Trim()
+}
 if ([string]::IsNullOrWhiteSpace($AuthToken)) {
     Write-Warning "No AuthToken provided. Agent enrollment might fail without an active enrollment token."
 }
+Remove-Item Env:AGENTAUTHTOKEN -ErrorAction SilentlyContinue
 
 # 3. Locate source directory relative to script root and check package integrity
 $SourceDir = $PSScriptRoot
