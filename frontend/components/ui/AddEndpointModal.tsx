@@ -68,7 +68,7 @@ function CodeBlock({ code, label }: { code: string; label?: string }) {
           )}
         </button>
       </div>
-      <pre className="p-3 text-xs text-emerald-400 font-mono overflow-x-auto whitespace-pre leading-relaxed select-all">
+      <pre className="p-3 text-xs text-emerald-400 font-mono whitespace-pre-wrap break-all sm:break-normal overflow-x-auto leading-relaxed select-all">
         {code}
       </pre>
     </div>
@@ -227,8 +227,8 @@ sudo /opt/soc-monitor-agent/uninstall-agent.sh --full`
 sudo /opt/soc-monitor-agent/soc-agent --config /etc/soc-monitor-agent/agent.yml &`
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/75 backdrop-blur-sm overflow-y-auto">
-      <div className="bg-gray-900 border border-gray-800 rounded-xl shadow-2xl w-[94vw] lg:w-[75vw] max-w-5xl 2xl:max-w-6xl max-h-[90vh] flex flex-col overflow-hidden my-auto animate-in fade-in duration-150">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 md:p-6 bg-black/75 backdrop-blur-sm overflow-y-auto">
+      <div className="add-endpoint-modal-dialog w-[calc(100vw-2rem)] sm:w-[90vw] lg:w-[min(75vw,1400px)] max-w-[1400px] min-w-[300px] bg-gray-900 border border-gray-800 rounded-xl shadow-2xl max-h-[90vh] flex flex-col overflow-hidden my-auto animate-in fade-in duration-150">
         
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800 bg-gray-950/80 shrink-0">

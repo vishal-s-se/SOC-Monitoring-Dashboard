@@ -48,3 +48,23 @@ body {
     border-color: rgba(96, 165, 250, 0.8);
   }
 }
+
+/* Add Endpoint Modal: 75vw Desktop Responsive Sizing */
+.add-endpoint-modal-dialog {
+  width: calc(100vw - 2rem);
+  max-width: 1400px;
+  min-width: 300px;
+}
+
+@media (min-width: 640px) {
+  .add-endpoint-modal-dialog {
+    width: 90vw;
+  }
+}
+
+@media (min-width: 1024px) {
+  .add-endpoint-modal-dialog {
+    width: min(75vw, 1400px);
+  }
+}
+

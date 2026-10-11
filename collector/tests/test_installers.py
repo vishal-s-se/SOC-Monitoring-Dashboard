@@ -65,8 +65,9 @@ def test_add_endpoint_modal_width_and_commands():
         content = f.read()
 
     # 1. Viewport width target: 75% on desktop
-    assert "lg:w-[75vw]" in content, "Modal must target 75% viewport width on desktop (lg:w-[75vw])"
-    assert "w-[94vw]" in content, "Modal must use responsive width on mobile"
+    assert "add-endpoint-modal-dialog" in content, "Modal must use add-endpoint-modal-dialog class"
+    assert "75vw" in content, "Modal must target 75% viewport width on desktop (75vw)"
+    assert "max-w-[1400px]" in content, "Modal must cap at 1400px"
     assert "max-h-[90vh]" in content, "Modal must fit viewport height with internal scroll"
     
     # 2. Windows command uses $env:AGENTAUTHTOKEN and finally block cleanup
