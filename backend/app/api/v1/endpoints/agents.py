@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import func
-from typing import Optional
+from typing import Optional, List
 
 from backend.app.db.session import get_db
 from backend.app.models.agent import Agent as AgentModel
@@ -133,6 +133,74 @@ async def retire_agent(
         "hostname": agent.hostname,
         "note": "Agent retired in SOC Monitor. Historical data preserved. Uninstall the agent software locally to stop collection.",
     }
+
+
+from pydantic import BaseModel
+
+class BulkRetireRequest(BaseModel):
+    agent_ids: Optional[List[str]] = None  # If provided, retire specific agent_ids, otherwise all eligible non-retired
+
+
+@router.post("/retire-all", status_code=200)
+async def retire_all_agents(
+    payload: Optional[BulkRetireRequest] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Safely bulk-retire eligible, non-retired agents in SOC Monitor.
+    Soft-retires each agent (setting status='RETIRED') and records audit history.
+    Does not delete endpoint software, events, or investigation history.
+    """
+    stmt = select(AgentModel).where(AgentModel.status != "RETIRED")
+    if payload and payload.agent_ids:
+        stmt = stmt.where(AgentModel.agent_id.in_(payload.agent_ids))
+
+    result = await db.execute(stmt)
+    agents_to_retire = result.scalars().all()
+
+    if not agents_to_retire:
+        return {
+            "status": "no_action",
+            "message": "No eligible non-retired agents found to retire.",
+            "retired_count": 0,
+            "retired_agent_ids": []
+        }
+
+    from backend.app.core.audit import audit
+    from backend.app.engine.event_bus import event_bus
+
+    retired_ids = []
+    for agent in agents_to_retire:
+        prev_status = agent.status
+        agent.status = "RETIRED"
+        retired_ids.append(agent.agent_id)
+
+        audit(
+            "agent_retired",
+            actor="dashboard_admin",
+            outcome="success",
+            agent_id=agent.agent_id,
+            hostname=agent.hostname,
+            previous_status=prev_status,
+            bulk_operation=True
+        )
+
+        await event_bus.publish("agent_status_changed", {
+            "agent_id": agent.agent_id,
+            "hostname": agent.hostname,
+            "status": "RETIRED",
+            "previous_status": prev_status,
+        })
+
+    await db.commit()
+
+    return {
+        "status": "success",
+        "message": f"Successfully retired {len(retired_ids)} agents.",
+        "retired_count": len(retired_ids),
+        "retired_agent_ids": retired_ids
+    }
+
 
 from backend.app.models.enrollment import EnrollmentCode
 import uuid

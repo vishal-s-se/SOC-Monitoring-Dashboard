@@ -38,7 +38,6 @@ const NAV_SECTIONS = [
     items: [
       { name: 'Hosts', href: '/hosts' },
       { name: 'Agents', href: '/agents' },
-      { name: 'Add Endpoint', href: '/endpoints/download' },
     ]
   },
   {

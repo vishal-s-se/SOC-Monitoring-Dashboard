@@ -64,6 +64,71 @@ function RetireConfirmDialog({
   )
 }
 
+function BulkRetireConfirmDialog({
+  eligibleAgents,
+  onConfirm,
+  onCancel,
+  loading,
+}: {
+  eligibleAgents: any[]
+  onConfirm: () => void
+  onCancel: () => void
+  loading: boolean
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
+      <div className="bg-gray-900 border border-red-800/60 rounded-lg shadow-2xl w-full max-w-lg">
+        <div className="p-6 space-y-4">
+          <div className="flex items-center space-x-2">
+            <span className="p-2 rounded-full bg-red-950/80 border border-red-600 text-red-400 font-bold text-sm">⚠️</span>
+            <h3 className="text-lg font-semibold text-white">Retire All Active Agents</h3>
+          </div>
+          
+          <div className="p-3 bg-red-950/30 border border-red-800/40 rounded text-sm text-red-200">
+            <p className="font-semibold mb-1">
+              {eligibleAgents.length} eligible agent{eligibleAgents.length === 1 ? '' : 's'} will be soft-retired.
+            </p>
+            <p className="text-xs text-red-300/90">
+              Already-retired agents are excluded. Historical logs, alerts, investigations, and audit records will remain preserved.
+            </p>
+          </div>
+
+          <div className="max-h-40 overflow-y-auto space-y-1.5 p-2 bg-gray-950/70 border border-gray-800 rounded text-xs font-mono">
+            {eligibleAgents.map(a => (
+              <div key={a.agent_id} className="flex justify-between items-center text-gray-300 py-0.5 border-b border-gray-900">
+                <span className="text-white font-medium">{a.hostname || 'Unknown'}</span>
+                <span className="text-gray-400 truncate max-w-[160px]">{a.agent_id}</span>
+                <span className="text-emerald-400 text-[10px] uppercase font-sans">{a.status}</span>
+              </div>
+            ))}
+          </div>
+
+          <p className="text-xs text-yellow-500 bg-yellow-900/20 p-2.5 rounded border border-yellow-700/30">
+            This operation will not stop local OS services or delete software on remote machines.
+          </p>
+
+          <div className="flex justify-end space-x-3 pt-2">
+            <button
+              onClick={onCancel}
+              disabled={loading}
+              className="px-4 py-2 text-sm text-gray-300 hover:text-white bg-gray-800 hover:bg-gray-700 rounded transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={onConfirm}
+              disabled={loading}
+              className="px-4 py-2 text-sm font-semibold text-white bg-red-700 hover:bg-red-600 rounded transition-colors disabled:opacity-50"
+            >
+              {loading ? 'Retiring All…' : `Confirm Retire All (${eligibleAgents.length})`}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function AgentsPage() {
   const [agents, setAgents] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -71,6 +136,8 @@ export default function AgentsPage() {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [retireTarget, setRetireTarget] = useState<any | null>(null)
   const [retireLoading, setRetireLoading] = useState(false)
+  const [showBulkRetireDialog, setShowBulkRetireDialog] = useState(false)
+  const [bulkRetireLoading, setBulkRetireLoading] = useState(false)
 
   const { lastMessage } = useWebSocket()
 
@@ -121,6 +188,21 @@ export default function AgentsPage() {
     }
   }
 
+  const eligibleAgents = agents.filter(a => a.status !== 'RETIRED')
+
+  const handleBulkRetireConfirm = async () => {
+    setBulkRetireLoading(true)
+    try {
+      const res = await api.post<any>('/agents/retire-all', {})
+      setShowBulkRetireDialog(false)
+      await loadAgents()
+    } catch (err: any) {
+      alert(err.message || 'Failed to bulk-retire agents')
+    } finally {
+      setBulkRetireLoading(false)
+    }
+  }
+
   if (loading) return <LoadingState message="Loading agents..." />
   if (error) return <ErrorState message={error} retry={loadAgents} />
 
@@ -141,16 +223,34 @@ export default function AgentsPage() {
           loading={retireLoading}
         />
       )}
+      {showBulkRetireDialog && (
+        <BulkRetireConfirmDialog
+          eligibleAgents={eligibleAgents}
+          onConfirm={handleBulkRetireConfirm}
+          onCancel={() => setShowBulkRetireDialog(false)}
+          loading={bulkRetireLoading}
+        />
+      )}
       <PageHeader
         title="Agents"
         description="Manage SOC telemetry collectors deployed across your fleet"
         actions={
-          <button
-            onClick={() => setIsAddModalOpen(true)}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded text-sm transition-colors"
-          >
-            Add Endpoint
-          </button>
+          <div className="flex items-center space-x-3">
+            {eligibleAgents.length > 0 && (
+              <button
+                onClick={() => setShowBulkRetireDialog(true)}
+                className="px-3.5 py-2 bg-red-950/80 hover:bg-red-900 border border-red-700/60 text-red-200 hover:text-white rounded text-sm font-medium transition-colors"
+              >
+                Retire All ({eligibleAgents.length})
+              </button>
+            )}
+            <button
+              onClick={() => setIsAddModalOpen(true)}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded text-sm transition-colors"
+            >
+              Add Endpoint
+            </button>
+          </div>
         }
       />
 

@@ -7,6 +7,7 @@ export function AddEndpointModal({ isOpen, onClose }: { isOpen: boolean, onClose
   const [step, setStep] = useState<1|2>(1)
   const [os, setOs] = useState<'windows'|'linux'|'wsl'|null>(null)
   const [code, setCode] = useState("")
+  const [copied, setCopied] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
 
@@ -189,9 +190,44 @@ sudo dpkg -i soc-monitor-agent.deb`}
             <div className="space-y-6">
               <div className="flex items-start justify-between">
                 <p className="text-sm text-gray-300">Run the following commands on the target machine to install and authorize the SOC agent.</p>
-                <div className="text-xs bg-yellow-900/30 text-yellow-500 px-2 py-1 rounded border border-yellow-700/50">
-                  Token expires in 24 hours
+                <div className="text-xs bg-yellow-900/30 text-yellow-400 px-2.5 py-1 rounded border border-yellow-700/50 flex items-center space-x-1.5 shrink-0">
+                  <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-ping" />
+                  <span>Single-use • Expires in 24h</span>
                 </div>
+              </div>
+
+              {/* Dedicated Enrollment Token Card with Copy Button */}
+              <div className="p-3.5 bg-gray-950 border border-gray-800 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider flex items-center space-x-2">
+                    <span>Generated One-Time Enrollment Token</span>
+                    <span className="text-[10px] bg-blue-950 text-blue-300 border border-blue-800 px-1.5 py-0.5 rounded">Hashed on Backend</span>
+                  </div>
+                  <div className="font-mono text-sm text-emerald-400 font-bold break-all mt-1 select-all">
+                    {code}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(code)
+                    setCopied(true)
+                    setTimeout(() => setCopied(false), 2000)
+                  }}
+                  className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs font-medium rounded border border-gray-700 transition-colors flex items-center space-x-1.5 shrink-0 justify-center"
+                >
+                  {copied ? (
+                    <>
+                      <span className="text-emerald-400">✓</span>
+                      <span>Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>📋</span>
+                      <span>Copy Token</span>
+                    </>
+                  )}
+                </button>
               </div>
               
               {renderInstructions()}

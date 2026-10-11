@@ -695,3 +695,112 @@ async def trigger_catalog_seed(db: AsyncSession = Depends(get_db)):
     """Admin endpoint to seed or refresh the Enterprise MITRE ATT&CK catalog idempotently."""
     res = await seed_mitre_catalog(db)
     return {"status": "success", "summary": res}
+
+
+@router.get("/graph-data")
+async def get_mitre_graph_data(
+    tactic: Optional[str] = Query(None, description="Optional tactic filter"),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Fetch structured graph nodes and edges representing the MITRE ATT&CK hierarchy
+    (Tactics -> Techniques -> Sub-techniques) and evidence-mapped SOC detections.
+    """
+    # 1. Fetch Tactics
+    tac_stmt = select(MitreTacticModel).order_by(MitreTacticModel.order_index.asc())
+    if tactic:
+        t_clean = tactic.strip().upper()
+        tac_stmt = tac_stmt.where(
+            or_(
+                MitreTacticModel.tactic_id == t_clean,
+                MitreTacticModel.name.ilike(f"%{tactic.strip()}%")
+            )
+        )
+    tac_res = await db.execute(tac_stmt)
+    tactics = tac_res.scalars().all()
+    target_tactic_ids = {t.tactic_id for t in tactics}
+
+    # 2. Fetch Techniques with tactics and mappings
+    tech_stmt = (
+        select(MitreTechniqueModel)
+        .options(
+            selectinload(MitreTechniqueModel.tactics).selectinload(MitreTechniqueTacticModel.tactic),
+            selectinload(MitreTechniqueModel.mappings)
+        )
+        .where(MitreTechniqueModel.is_deprecated == False)
+        .order_by(MitreTechniqueModel.technique_id.asc())
+    )
+    tech_res = await db.execute(tech_stmt)
+    all_techniques = tech_res.scalars().all()
+
+    nodes = []
+    edges = []
+    node_ids = set()
+
+    # Add Tactic Nodes
+    for tac in tactics:
+        t_id = f"tactic_{tac.tactic_id}"
+        if t_id not in node_ids:
+            nodes.append({
+                "id": t_id,
+                "label": tac.name,
+                "type": "tactic",
+                "tactic_id": tac.tactic_id,
+                "order_index": tac.order_index,
+                "description": tac.description
+            })
+            node_ids.add(t_id)
+
+    # Filter techniques that belong to the queried tactics
+    included_techniques = []
+    for t in all_techniques:
+        tech_tactics = [tt.tactic_id for tt in t.tactics if tt.tactic]
+        if not target_tactic_ids or any(tid in target_tactic_ids for tid in tech_tactics):
+            included_techniques.append((t, tech_tactics))
+
+    for t, tech_tactics in included_techniques:
+        tech_node_id = f"tech_{t.technique_id}"
+        evidence_count = len(t.mappings) if t.mappings else 0
+        
+        if tech_node_id not in node_ids:
+            nodes.append({
+                "id": tech_node_id,
+                "label": f"{t.technique_id}: {t.name}",
+                "name": t.name,
+                "technique_id": t.technique_id,
+                "type": "subtechnique" if t.is_subtechnique else "technique",
+                "is_subtechnique": t.is_subtechnique,
+                "parent_technique_id": t.parent_technique_id,
+                "platforms": t.platforms or [],
+                "evidence_count": evidence_count,
+                "has_evidence": evidence_count > 0,
+                "tactics": [tt.tactic.name for tt in t.tactics if tt.tactic]
+            })
+            node_ids.add(tech_node_id)
+
+        # Edges
+        if t.is_subtechnique and t.parent_technique_id:
+            parent_node_id = f"tech_{t.parent_technique_id}"
+            edges.append({
+                "source": parent_node_id,
+                "target": tech_node_id,
+                "type": "parent_of",
+                "label": "sub-technique"
+            })
+        else:
+            for tac_id in tech_tactics:
+                if not target_tactic_ids or tac_id in target_tactic_ids:
+                    tactic_node_id = f"tactic_{tac_id}"
+                    edges.append({
+                        "source": tactic_node_id,
+                        "target": tech_node_id,
+                        "type": "includes",
+                        "label": "technique"
+                    })
+
+    return {
+        "nodes": nodes,
+        "edges": edges,
+        "total_nodes": len(nodes),
+        "total_edges": len(edges)
+    }
