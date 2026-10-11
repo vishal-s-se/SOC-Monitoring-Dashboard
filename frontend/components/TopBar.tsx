@@ -4,6 +4,7 @@ import { useWebSocket } from "@/hooks/useWebSocket";
 import { useState, useEffect } from "react";
 import { api } from "@/lib/api";
 import { usePathname } from "next/navigation";
+import Link from "next/link";
 import { AddEndpointModal } from "@/components/ui/AddEndpointModal";
 import { AlertToastNotification } from "@/components/AlertToastNotification";
 
@@ -15,18 +16,30 @@ export default function TopBar() {
 
   useEffect(() => {
     if (pathname === '/login') return;
-    // We check API health occasionally
+    let isCancelled = false;
+    let interval: NodeJS.Timeout | null = null;
+
     const checkApi = async () => {
       try {
-        await api.get("/agents?limit=1");
-        setApiStatus("ONLINE");
-      } catch (err) {
-        setApiStatus("OFFLINE");
+        await api.get("/agents/?limit=1");
+        if (!isCancelled) {
+          setApiStatus("ONLINE");
+        }
+      } catch (err: any) {
+        if (!isCancelled) {
+          setApiStatus("OFFLINE");
+          if (err?.status === 401 && interval) {
+            clearInterval(interval);
+          }
+        }
       }
     };
     checkApi();
-    const interval = setInterval(checkApi, 10000);
-    return () => clearInterval(interval);
+    interval = setInterval(checkApi, 15000);
+    return () => {
+      isCancelled = true;
+      if (interval) clearInterval(interval);
+    };
   }, [pathname]);
 
   if (pathname === '/login') return null;
@@ -78,8 +91,28 @@ export default function TopBar() {
           </div>
         </div>
 
-        {/* User Profile */}
-        <div className="flex items-center space-x-3">
+        {/* User Profile & Actions */}
+        <div className="flex items-center space-x-2.5">
+          <Link
+            href="/help"
+            title="Help & Documentation"
+            className="flex items-center space-x-1.5 text-xs text-blue-400 hover:text-blue-300 transition-colors bg-blue-950/40 hover:bg-blue-900/40 border border-blue-800/80 hover:border-blue-700 px-2.5 py-1 rounded"
+          >
+            <svg
+              className="w-3.5 h-3.5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
+            </svg>
+            <span className="font-medium">Help & Docs</span>
+          </Link>
           <div className="h-8 w-8 rounded-full bg-blue-600 flex items-center justify-center text-sm font-semibold cursor-pointer">
             A
           </div>
@@ -90,7 +123,7 @@ export default function TopBar() {
               } catch (e) {
                 console.error('Logout failed', e);
               }
-              window.location.href = '/login';
+              window.location.href = '/login?logout=1';
             }}
             className="text-xs text-gray-400 hover:text-white transition-colors border border-gray-700 hover:border-gray-500 px-2 py-1 rounded"
           >
