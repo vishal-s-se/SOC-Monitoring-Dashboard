@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from 'react'
-import { api } from '@/lib/api'
+import { api, resetLoginRedirectState } from '@/lib/api'
 import { useRouter } from 'next/navigation'
 
 const ShieldIcon = () => (
@@ -42,10 +42,13 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const router = useRouter()
 
-  // Redirect to dashboard if already authenticated
+  // Check for expired session flag and reset redirect guard
   useEffect(() => {
-    // Middleware handles initial redirect, but we can also use an API check if we want
-  }, [router])
+    resetLoginRedirectState()
+    if (typeof window !== 'undefined' && window.location.search.includes('expired=1')) {
+      setError("Your session has expired. Please sign in again.")
+    }
+  }, [])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -57,8 +60,9 @@ export default function LoginPage() {
     setLoading(true)
     setError('')
     try {
-      // The API call now sets the HttpOnly cookie automatically
+      // The API call sets the HttpOnly cookie automatically
       await api.post<any>('/auth/login', { username, password })
+      resetLoginRedirectState()
       window.location.href = '/' // Force a full reload to let middleware and components pick up the cookie
     } catch (err: any) {
       // Avoid revealing if a username specifically exists vs bad password

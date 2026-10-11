@@ -12,6 +12,10 @@ class CollectorSettings(BaseSettings):
     AGENT_SHARED_SECRET: str = Field(default_factory=lambda: secrets.token_urlsafe(32))
     DATABASE_URL: str = "postgresql+asyncpg://localhost:5432/soc_monitor"
 
+    TLS_ENABLED: bool = False
+    TLS_CERT_PATH: str | None = None
+    TLS_KEY_PATH: str | None = None
+
     model_config = SettingsConfigDict(env_file="../.env", env_file_encoding="utf-8", extra="ignore")
 
 settings = CollectorSettings()

@@ -1,0 +1,22 @@
+collector:
+  host: "127.0.0.1"
+  port: 5000
+  tls: false
+  auth_token: ""
+
+agent:
+  id_file: "/var/lib/soc-monitor-agent/agent_id.txt"
+  state_dir: "/var/lib/soc-monitor-agent/state"
+  heartbeat_interval: 60
+  buffer_max_events: 1000
+  collection_interval: 5
+  retry_max_delay: 60
+  max_payload_bytes: 1048576
+  journald_enabled: false
+
+linux:
+  log_paths:
+    - "/var/log/auth.log"
+    - "/var/log/syslog"
+    - "/var/log/messages"
+    - "/var/log/secure"

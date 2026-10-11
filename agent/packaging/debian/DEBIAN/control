@@ -1,0 +1,6 @@
+Package: soc-monitor-agent
+Version: 0.1.0
+Architecture: amd64
+Maintainer: SOC Monitor Team <admin@example.com>
+Description: SOC Monitor Endpoint Agent for Linux
+ Collects security logs and forwards them to the SOC Collector.

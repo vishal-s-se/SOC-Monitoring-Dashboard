@@ -18,9 +18,14 @@ export function useWebSocket() {
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout>();
+  const reconnectAttemptsRef = useRef(0);
   const isComponentMounted = useRef(true);
 
   const connect = useCallback(() => {
+    if (typeof window !== "undefined" && window.location.pathname.startsWith('/login')) {
+      return;
+    }
+
     if (wsRef.current?.readyState === WebSocket.OPEN || wsRef.current?.readyState === WebSocket.CONNECTING) {
       return;
     }
@@ -38,6 +43,7 @@ export function useWebSocket() {
       ws.onopen = () => {
         if (!isComponentMounted.current) return;
         setStatus("CONNECTED");
+        reconnectAttemptsRef.current = 0;
         if (reconnectTimeoutRef.current) {
           clearTimeout(reconnectTimeoutRef.current);
           reconnectTimeoutRef.current = undefined;
@@ -54,16 +60,28 @@ export function useWebSocket() {
         }
       };
 
-      ws.onclose = () => {
+      ws.onclose = (event) => {
         if (!isComponentMounted.current) return;
         setStatus("DISCONNECTED");
         wsRef.current = null;
 
-        // Attempt reconnect after 3 seconds
-        if (!reconnectTimeoutRef.current) {
+        // Code 1008 is WS_POLICY_VIOLATION (Authentication Failure). Do not retry endlessly.
+        if (event.code === 1008) {
+          console.warn("WebSocket closed due to authentication failure (1008). Reconnect halted.");
+          setStatus("ERROR");
+          return;
+        }
+
+        // Bounded exponential backoff up to 30s, max 8 reconnect attempts
+        if (reconnectAttemptsRef.current < 8 && !reconnectTimeoutRef.current) {
+          reconnectAttemptsRef.current += 1;
+          const delay = Math.min(30000, 2000 * Math.pow(1.5, reconnectAttemptsRef.current));
           reconnectTimeoutRef.current = setTimeout(() => {
-            connect();
-          }, 3000);
+            reconnectTimeoutRef.current = undefined;
+            if (isComponentMounted.current) {
+              connect();
+            }
+          }, delay);
         }
       };
 
@@ -80,6 +98,7 @@ export function useWebSocket() {
   }, []);
 
   const disconnect = useCallback(() => {
+    reconnectAttemptsRef.current = 0;
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
       reconnectTimeoutRef.current = undefined;

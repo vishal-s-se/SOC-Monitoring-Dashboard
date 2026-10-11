@@ -1,6 +1,7 @@
 import httpx
 import asyncio
 import json
+import os
 from datetime import datetime, timezone
 import uuid
 
@@ -8,7 +9,10 @@ async def seed_data():
     base_url = "http://localhost:8000/api/v1"
     collector_url = "http://localhost:5000/api/v1/agent"
     
-    headers = {"X-Agent-Auth": "changeme_secret", "Content-Type": "application/json"}
+    agent_secret = os.environ.get("TEST_AGENT_SECRET")
+    if not agent_secret:
+        raise ValueError("Missing TEST_AGENT_SECRET")
+    headers = {"X-Agent-Auth": agent_secret, "Content-Type": "application/json"}
     
     async with httpx.AsyncClient() as client:
         # Register an agent
@@ -57,9 +61,12 @@ async def seed_data():
         })
 
         # Generate an admin token for the frontend
+        admin_pass = os.environ.get("TEST_ADMIN_PASSWORD")
+        if not admin_pass:
+            raise ValueError("Missing TEST_ADMIN_PASSWORD")
         login_res = await client.post("http://localhost:8000/api/v1/auth/login", json={
             "username": "admin",
-            "password": "changeme123"
+            "password": admin_pass
         }, headers={"Content-Type": "application/json"})
         
         if login_res.status_code != 200:

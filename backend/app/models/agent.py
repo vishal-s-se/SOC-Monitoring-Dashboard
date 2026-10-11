@@ -15,6 +15,7 @@ class Agent(Base):
     registered_at = Column(DateTime(timezone=True), server_default=func.now())
     last_seen = Column(DateTime(timezone=True), nullable=True)
     ip_address = Column(String, nullable=True)
+    token_hash = Column(String, nullable=True, index=True)
     metadata_ = Column("metadata", JSONB, nullable=True)  # Using metadata_ to avoid conflict with SQLAlchemy's metadata
 
     host = relationship("Host", back_populates="agents")

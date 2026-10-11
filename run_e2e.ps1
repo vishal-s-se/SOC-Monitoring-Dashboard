@@ -2,11 +2,15 @@ $ErrorActionPreference = "Stop"
 
 Write-Host "Starting E2E Tests Environment..."
 
-$env:DATABASE_URL="postgresql+asyncpg://postgres:Vishal%402006@localhost:5432/soc_monitor_test"
-$env:AGENT_SHARED_SECRET="changeme_secret"
+if (-not $env:TEST_DB_PASSWORD) { throw "Missing required environment variable: TEST_DB_PASSWORD" }
+if (-not $env:TEST_AGENT_SECRET) { throw "Missing required environment variable: TEST_AGENT_SECRET" }
+if (-not $env:TEST_ADMIN_PASSWORD) { throw "Missing required environment variable: TEST_ADMIN_PASSWORD" }
+
+$env:DATABASE_URL="postgresql+asyncpg://postgres:$($env:TEST_DB_PASSWORD)@localhost:5432/soc_monitor_test"
+$env:AGENT_SHARED_SECRET=$env:TEST_AGENT_SECRET
 $env:ENVIRONMENT="development"
 $env:BOOTSTRAP_ADMIN_USERNAME="admin"
-$env:BOOTSTRAP_ADMIN_PASSWORD="changeme123"
+$env:BOOTSTRAP_ADMIN_PASSWORD=$env:TEST_ADMIN_PASSWORD
 
 Write-Host "Resetting DB..."
 & .\backend\venv\Scripts\python.exe -c "

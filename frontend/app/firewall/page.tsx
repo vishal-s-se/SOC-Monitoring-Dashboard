@@ -1,7 +1,8 @@
 "use client"
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, Suspense } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { api } from '@/lib/api'
 import { Card, CardContent } from '@/components/ui/Card'
 import { PageHeader, LoadingState, ErrorState, EmptyState } from '@/components/ui/States'
@@ -12,7 +13,10 @@ import { FilterBar, FilterInput, FilterSelect } from '@/components/ui/FilterBar'
 import { Pagination } from '@/components/ui/Pagination'
 import { EventDetailsModal } from '@/components/ui/EventDetailsModal'
 
-export default function FirewallPage() {
+function FirewallContent() {
+  const searchParams = useSearchParams()
+  const osParam = searchParams.get('os')?.toLowerCase() || ''
+
   const [events, setEvents] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
@@ -52,6 +56,7 @@ export default function FirewallPage() {
         event_type: 'firewall',
         action: action || undefined,
         protocol: protocol || undefined,
+        operating_system: osParam || undefined,
         search: debouncedSearch || undefined
       })
       setEvents(res.items || [])
@@ -62,7 +67,7 @@ export default function FirewallPage() {
     } finally {
       setLoading(false)
     }
-  }, [page, pageSize, action, protocol, debouncedSearch])
+  }, [page, pageSize, action, protocol, debouncedSearch, osParam])
 
   useEffect(() => {
     loadData()
@@ -74,6 +79,10 @@ export default function FirewallPage() {
 
       // Only process if it matches our criteria
       if (newEvent.event_type?.toLowerCase() === 'firewall' || newEvent.source_type?.toLowerCase().includes('firewall')) {
+        if (osParam) {
+          const evOs = (newEvent.operating_system || newEvent.agent?.operating_system || '').toLowerCase()
+          if (!evOs.includes(osParam)) return
+        }
         if (action && newEvent.action?.toLowerCase() !== action.toLowerCase()) return
         if (protocol && newEvent.protocol?.toLowerCase() !== protocol.toLowerCase()) return
 
@@ -91,14 +100,29 @@ export default function FirewallPage() {
         }
       }
     }
-  }, [lastMessage, page, action, protocol])
+  }, [lastMessage, page, action, protocol, osParam])
+
+  const title = osParam
+    ? `${osParam.charAt(0).toUpperCase() + osParam.slice(1)} Firewall Logs`
+    : 'Firewall Logs'
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Firewall Logs"
-        description="Search and filter firewall network security events"
-      />
+      <div className="flex items-center justify-between">
+        <PageHeader
+          title={title}
+          description="Search and filter firewall network security events"
+        />
+        {osParam && (
+          <span className={`inline-flex items-center rounded-md px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${
+            osParam === 'windows'
+              ? 'bg-sky-500/10 text-sky-400 ring-sky-500/20'
+              : 'bg-amber-500/10 text-amber-400 ring-amber-500/20'
+          }`}>
+            {osParam.toUpperCase()} Filtered
+          </span>
+        )}
+      </div>
 
       <FilterBar>
         <div className="flex-1">
@@ -144,7 +168,11 @@ export default function FirewallPage() {
       ) : events.length === 0 ? (
         <EmptyState
           title="No firewall events found"
-          description="Adjust your filters or wait for new telemetry."
+          description={
+            osParam === 'linux'
+              ? "No Linux firewall log events recorded yet. Linux firewall events populate when iptables/nftables log rules are logged to journald."
+              : "Adjust your filters or wait for new telemetry."
+          }
         />
       ) : (
         <Card>
@@ -206,5 +234,13 @@ export default function FirewallPage() {
         />
       )}
     </div>
+  )
+}
+
+export default function FirewallPage() {
+  return (
+    <Suspense fallback={<LoadingState message="Loading Firewall Logs..." />}>
+      <FirewallContent />
+    </Suspense>
   )
 }

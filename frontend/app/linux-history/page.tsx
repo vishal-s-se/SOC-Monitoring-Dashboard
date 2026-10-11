@@ -1,0 +1,239 @@
+"use client"
+
+import { useEffect, useState, useCallback, Suspense } from 'react'
+import { api } from '@/lib/api'
+import { Card, CardContent } from '@/components/ui/Card'
+import { PageHeader, LoadingState, ErrorState, EmptyState } from '@/components/ui/States'
+import { DataTable } from '@/components/ui/DataTable'
+import { SeverityBadge } from '@/components/ui/SeverityBadge'
+import { FilterBar, FilterInput, FilterSelect } from '@/components/ui/FilterBar'
+import { Pagination } from '@/components/ui/Pagination'
+import { EventDetailsModal } from '@/components/ui/EventDetailsModal'
+
+function LinuxHistoryContent() {
+  const [events, setEvents] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState("")
+  const [total, setTotal] = useState(0)
+
+  // Agent selector (active + retired)
+  const [agentsList, setAgentsList] = useState<any[]>([])
+  const [selectedAgentId, setSelectedAgentId] = useState("")
+
+  // Pagination
+  const [page, setPage] = useState(1)
+  const pageSize = 50
+
+  // Filters
+  const [search, setSearch] = useState("")
+  const [unitFilter, setUnitFilter] = useState("")
+  const [severity, setSeverity] = useState("")
+  const [debouncedSearch, setDebouncedSearch] = useState("")
+
+  // Modal
+  const [selectedEvent, setSelectedEvent] = useState<any | null>(null)
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(search)
+      setPage(1)
+    }, 500)
+    return () => clearTimeout(handler)
+  }, [search])
+
+  // Load Linux agents for provenance filter
+  useEffect(() => {
+    async function loadAgents() {
+      try {
+        const res = await api.get<any[]>('/agents')
+        const linAgents = (res || []).filter(a => !(a.operating_system || '').toLowerCase().includes('win'))
+        setAgentsList(linAgents)
+      } catch (e) {
+        console.error("Failed to load agents list", e)
+      }
+    }
+    loadAgents()
+  }, [])
+
+  const loadData = useCallback(async () => {
+    try {
+      setLoading(true)
+      const res = await api.get<any>('/events', {
+        page,
+        page_size: pageSize,
+        operating_system: 'linux',
+        severity: severity || undefined,
+        agent_id: selectedAgentId || undefined,
+        search: (debouncedSearch || unitFilter) ? `${debouncedSearch} ${unitFilter}`.trim() : undefined
+      })
+      setEvents(res.items || [])
+      setTotal(res.total || 0)
+      setError("")
+    } catch (err: any) {
+      setError(err.message || "Failed to load Linux event history")
+    } finally {
+      setLoading(false)
+    }
+  }, [page, pageSize, severity, selectedAgentId, debouncedSearch, unitFilter])
+
+  useEffect(() => {
+    loadData()
+  }, [loadData])
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <PageHeader
+          title="Linux Event History"
+          description="Forensic event provenance across active and historical retired Linux/Kali agents"
+        />
+        <span className="inline-flex items-center rounded-md bg-amber-500/10 px-2.5 py-1 text-xs font-semibold text-amber-400 ring-1 ring-inset ring-amber-500/20">
+          Linux Provenance
+        </span>
+      </div>
+
+      <FilterBar>
+        <div className="flex-1">
+          <FilterInput
+            label="Search Text"
+            value={search}
+            onChange={(val) => setSearch(val)}
+            placeholder="Search journal entries, syslog messages, accounts..."
+          />
+        </div>
+        <div className="w-56">
+          <FilterInput
+            label="Systemd Unit / Process"
+            value={unitFilter}
+            onChange={(val) => { setUnitFilter(val); setPage(1); }}
+            placeholder="e.g. systemd, sshd"
+          />
+        </div>
+        <div className="w-56">
+          <FilterSelect
+            label="Agent Provenance"
+            value={selectedAgentId}
+            onChange={(val) => { setSelectedAgentId(val); setPage(1); }}
+            placeholder="All Agent Provenances"
+            options={agentsList.map(a => ({
+              value: a.agent_id,
+              label: (a.status === 'RETIRED' ? '🔒 [RETIRED] ' : '● [ACTIVE] ') + (a.hostname || a.agent_id.slice(0, 14))
+            }))}
+          />
+        </div>
+        <div className="w-40">
+          <FilterSelect
+            label="Severity"
+            value={severity}
+            onChange={(val) => { setSeverity(val); setPage(1); }}
+            placeholder="All Severities"
+            options={[
+              { value: 'CRITICAL', label: 'Critical' },
+              { value: 'HIGH', label: 'High' },
+              { value: 'MEDIUM', label: 'Medium' },
+              { value: 'LOW', label: 'Low' },
+              { value: 'INFO', label: 'Info' }
+            ]}
+          />
+        </div>
+      </FilterBar>
+
+      <Card>
+        <CardContent className="p-0">
+          {loading ? (
+            <LoadingState message="Loading Linux historical telemetry..." />
+          ) : error ? (
+            <ErrorState message={error} retry={loadData} />
+          ) : events.length === 0 ? (
+            <EmptyState
+              title="No historical events matched"
+              description="No Linux journald events match the selected agent, unit, or search parameters."
+            />
+          ) : (
+            <div>
+              <DataTable
+                data={events}
+                keyExtractor={(r) => r.event_id || String(r.id)}
+                onRowClick={(r) => setSelectedEvent(r)}
+                columns={[
+                  {
+                    key: 'timestamp',
+                    title: 'Time',
+                    render: (r) => new Date(r.timestamp).toLocaleString()
+                  },
+                  {
+                    key: 'severity',
+                    title: 'Sev',
+                    render: (r) => <SeverityBadge severity={r.severity || 'INFO'} />
+                  },
+                  {
+                    key: 'unit',
+                    title: 'Systemd Unit / Process',
+                    render: (r) => {
+                      const unit = r.metadata?.UNIT || r.metadata?._SYSTEMD_UNIT || r.metadata?.SYSLOG_IDENTIFIER || r.metadata?._COMM || r.event_type || '-'
+                      return (
+                        <span className="font-mono text-xs font-semibold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                          {unit}
+                        </span>
+                      )
+                    }
+                  },
+                  {
+                    key: 'endpoint',
+                    title: 'Endpoint',
+                    render: (r) => (
+                      <div className="flex flex-col">
+                        <span className="font-mono text-xs text-gray-200">{r.hostname}</span>
+                        {r.agent?.status === 'RETIRED' && (
+                          <span className="text-[10px] text-amber-400 font-semibold uppercase">Retired Agent</span>
+                        )}
+                      </div>
+                    )
+                  },
+                  {
+                    key: 'source',
+                    title: 'Source Ingestion',
+                    render: (r) => <span className="text-xs text-gray-400">{r.source || 'linux_journald'}</span>
+                  },
+                  {
+                    key: 'description',
+                    title: 'Journal Entry / Log Content',
+                    render: (r) => {
+                      const msg = r.description || r.metadata?.MESSAGE || r.action || '-'
+                      return (
+                        <span className="text-xs text-gray-300 font-mono max-w-md truncate block">
+                          {msg}
+                        </span>
+                      )
+                    }
+                  }
+                ]}
+              />
+              <Pagination
+                currentPage={page}
+                total={total}
+                pageSize={pageSize}
+                onPageChange={setPage}
+              />
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {selectedEvent && (
+        <EventDetailsModal
+          event={selectedEvent}
+          onClose={() => setSelectedEvent(null)}
+        />
+      )}
+    </div>
+  )
+}
+
+export default function LinuxHistoryPage() {
+  return (
+    <Suspense fallback={<LoadingState message="Loading Linux History..." />}>
+      <LinuxHistoryContent />
+    </Suspense>
+  )
+}

@@ -117,13 +117,30 @@ def parse_linux_event(payload: Dict[str, Any]) -> Dict[str, Any]:
     normalized = {}
     normalized['event_category'] = 'linux'
 
-    message = payload.get('message')
-    if not message:
-        message = payload.get('raw_line', '')
+    inner = payload.get('raw_event') if isinstance(payload.get('raw_event'), dict) else payload
 
-    syslog_facility = payload.get('facility', '')
+    message = inner.get('MESSAGE') or inner.get('message') or inner.get('raw_line', '')
+    if not isinstance(message, str):
+        message = str(message or '')
 
-    if 'sshd' in message or 'sshd' in payload.get('process', ''):
+    process = inner.get('SYSLOG_IDENTIFIER') or inner.get('_COMM') or inner.get('process', '')
+    if not isinstance(process, str):
+        process = str(process or '')
+
+    priority = inner.get('PRIORITY')
+    if priority is not None:
+        try:
+            p_val = int(priority)
+            if p_val <= 3:
+                normalized['severity'] = 'HIGH'
+            elif p_val == 4:
+                normalized['severity'] = 'MEDIUM'
+            else:
+                normalized['severity'] = 'INFO'
+        except (ValueError, TypeError):
+            pass
+
+    if 'sshd' in message or 'sshd' in process:
         normalized['event_category'] = 'authentication'
         normalized['event_type'] = 'ssh_login'
         normalized['protocol'] = 'ssh'
@@ -154,27 +171,36 @@ def parse_linux_event(payload: Dict[str, Any]) -> Dict[str, Any]:
             except (ValueError, IndexError):
                 pass
 
-    if 'sudo' in message or 'sudo' in payload.get('process', ''):
+    if 'sudo' in message or 'sudo' in process:
         normalized['event_category'] = 'process'
         normalized['event_type'] = 'sudo'
         normalized['action'] = 'privilege_escalation'
+        # Extract user if available
+        if 'USER=' in message:
+            try:
+                target_user = message.split('USER=')[1].split(';')[0].strip()
+                if target_user:
+                    normalized['username'] = target_user
+            except Exception:
+                pass
 
     if 'iptables' in message.lower() or 'ufw block' in message.lower():
         normalized['event_category'] = 'firewall'
         normalized['action'] = 'deny'
-        # Basic IP extraction fallback
         if 'SRC=' in message:
             try:
                 normalized['source_ip'] = message.split('SRC=')[1].split()[0]
             except:
                 pass
 
-    # Extract Native Linux Identifiers
+    # Extract Native Linux Identifiers from both inner and payload
     native_identifiers = {}
     for key in ['__CURSOR', '__REALTIME_TIMESTAMP', '__MONOTONIC_TIMESTAMP', '_BOOT_ID', '_HOSTNAME', '_SYSTEMD_UNIT', 'SYSLOG_IDENTIFIER', 'PRIORITY', '_PID', '_UID']:
-        if key in payload:
+        if key in inner:
+            native_identifiers[key] = inner[key]
+        elif key in payload:
             native_identifiers[key] = payload[key]
-            
+
     if native_identifiers:
         normalized['native_identifiers'] = native_identifiers
 

@@ -48,6 +48,7 @@ secured_router.include_router(analytics.router, prefix="/analytics", tags=["anal
 secured_router.include_router(user_context.router, prefix="/user-context", tags=["user-context"])
 secured_router.include_router(event_context.router, prefix="/events", tags=["event-context"])
 secured_router.include_router(alert_context.router, prefix="/alerts", tags=["alert-context"])
+api_router.include_router(agents.public_router, prefix="/agents", tags=["agents"])
 api_router.include_router(secured_router)
 
 # WebSocket auth is enforced inside the endpoint (query token), not via HTTP bearer deps.

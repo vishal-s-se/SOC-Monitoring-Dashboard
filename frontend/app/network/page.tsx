@@ -1,7 +1,8 @@
 "use client"
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, Suspense } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { api } from '@/lib/api'
 import { Card, CardContent } from '@/components/ui/Card'
 import { PageHeader, LoadingState, ErrorState, EmptyState } from '@/components/ui/States'
@@ -12,7 +13,10 @@ import { FilterBar, FilterInput, FilterSelect } from '@/components/ui/FilterBar'
 import { Pagination } from '@/components/ui/Pagination'
 import { EventDetailsModal } from '@/components/ui/EventDetailsModal'
 
-export default function NetworkPage() {
+function NetworkContent() {
+  const searchParams = useSearchParams()
+  const osParam = searchParams.get('os')?.toLowerCase() || ''
+
   const [events, setEvents] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
@@ -52,6 +56,7 @@ export default function NetworkPage() {
         event_category: 'network',
         event_type: eventType || undefined,
         protocol: protocol || undefined,
+        operating_system: osParam || undefined,
         search: debouncedSearch || undefined
       })
       setEvents(res.items || [])
@@ -62,7 +67,7 @@ export default function NetworkPage() {
     } finally {
       setLoading(false)
     }
-  }, [page, pageSize, eventType, protocol, debouncedSearch])
+  }, [page, pageSize, eventType, protocol, debouncedSearch, osParam])
 
   useEffect(() => {
     loadData()
@@ -74,6 +79,10 @@ export default function NetworkPage() {
 
       // Only process if it matches our criteria
       if (newEvent.event_category?.toLowerCase() === 'network') {
+        if (osParam) {
+          const evOs = (newEvent.operating_system || newEvent.agent?.operating_system || '').toLowerCase()
+          if (!evOs.includes(osParam)) return
+        }
         if (eventType && newEvent.event_type !== eventType) return
         if (protocol && newEvent.protocol?.toLowerCase() !== protocol.toLowerCase()) return
 
@@ -91,14 +100,29 @@ export default function NetworkPage() {
         }
       }
     }
-  }, [lastMessage, page, eventType, protocol])
+  }, [lastMessage, page, eventType, protocol, osParam])
+
+  const title = osParam
+    ? `${osParam.charAt(0).toUpperCase() + osParam.slice(1)} Network Events`
+    : 'Network Events'
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Network Events"
-        description="Monitor network connections, DNS, and traffic"
-      />
+      <div className="flex items-center justify-between">
+        <PageHeader
+          title={title}
+          description="Monitor network connections, DNS, and traffic"
+        />
+        {osParam && (
+          <span className={`inline-flex items-center rounded-md px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${
+            osParam === 'windows'
+              ? 'bg-sky-500/10 text-sky-400 ring-sky-500/20'
+              : 'bg-amber-500/10 text-amber-400 ring-amber-500/20'
+          }`}>
+            {osParam.toUpperCase()} Filtered
+          </span>
+        )}
+      </div>
 
       <FilterBar>
         <div className="flex-1">
@@ -143,7 +167,11 @@ export default function NetworkPage() {
       ) : events.length === 0 ? (
         <EmptyState
           title="No network events found"
-          description="Adjust your filters or wait for new telemetry."
+          description={
+            osParam === 'linux'
+              ? "No Linux network connection events recorded yet. Linux network events populate when iptables log rules or sshd connection entries occur in journald."
+              : "Adjust your filters or wait for new telemetry."
+          }
         />
       ) : (
         <Card>
@@ -201,5 +229,13 @@ export default function NetworkPage() {
         />
       )}
     </div>
+  )
+}
+
+export default function NetworkPage() {
+  return (
+    <Suspense fallback={<LoadingState message="Loading Network Events..." />}>
+      <NetworkContent />
+    </Suspense>
   )
 }

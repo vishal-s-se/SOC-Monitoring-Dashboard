@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import select, text
@@ -74,27 +74,62 @@ app.add_middleware(
 )
 
 
+def _with_cors_headers(request: Request, response: Response) -> Response:
+    origin = request.headers.get("origin")
+    if origin and (origin in settings.cors_origin_list or "*" in settings.cors_origin_list):
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type, X-Requested-With"
+    return response
+
+
 @app.middleware("http")
 async def security_and_limits(request: Request, call_next):
+    # Never rate limit or block CORS preflight requests
+    if request.method == "OPTIONS":
+        return await call_next(request)
+
     content_length = request.headers.get("content-length")
     if content_length:
         try:
             if int(content_length) > settings.MAX_REQUEST_BODY_BYTES:
-                return JSONResponse(status_code=413, content={"detail": "Request entity too large"})
+                return _with_cors_headers(
+                    request,
+                    JSONResponse(status_code=413, content={"detail": "Request entity too large"}),
+                )
         except ValueError:
-            return JSONResponse(status_code=400, content={"detail": "Invalid Content-Length"})
+            return _with_cors_headers(
+                request,
+                JSONResponse(status_code=400, content={"detail": "Invalid Content-Length"}),
+            )
 
     path = request.url.path
     if path not in PUBLIC_PATHS and not path.startswith("/api/v1/auth/login"):
         if path.startswith("/api/") or path.startswith("/api/v1/ws"):
             try:
+                segments = [s for s in path.split("/") if s]
+                resource = "root"
+                if len(segments) >= 3:
+                    resource = segments[2]
+                    if len(segments) >= 5:
+                        resource = f"{segments[2]}:{segments[4]}"
+                    elif len(segments) == 4:
+                        resource = f"{segments[2]}:item"
                 check_rate_limit(
-                    f"api:{client_ip(request)}:{path.split('/')[3] if len(path.split('/')) > 3 else 'root'}",
+                    f"api:{client_ip(request)}:{resource}",
                     rate_limit_for_path(path),
                 )
             except Exception as exc:
                 if getattr(exc, "status_code", None) == 429:
-                    return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded"})
+                    return _with_cors_headers(
+                        request,
+                        JSONResponse(
+                            status_code=429,
+                            content={"detail": "Rate limit exceeded"},
+                            headers={"Retry-After": "60"},
+                        ),
+                    )
                 raise
 
     response = await call_next(request)

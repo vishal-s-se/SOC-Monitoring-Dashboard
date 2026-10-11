@@ -14,7 +14,12 @@ from backend.app.core.rate_limit import (
     login_is_locked,
     record_login_failure,
 )
-from backend.app.core.security import create_access_token, revoke_token, verify_password
+from backend.app.core.security import (
+    create_access_token,
+    decode_access_token,
+    revoke_token,
+    verify_password,
+)
 from backend.app.db.session import get_db
 from backend.app.models.user import User
 
@@ -85,10 +90,28 @@ async def login(payload: LoginRequest, request: Request, db: AsyncSession = Depe
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-async def logout(request: Request, current_user: User = Depends(get_current_active_user)):
-    revoke_token(getattr(request.state, "token_jti", None))
-    audit("session_invalidation", actor=current_user.username, outcome="success")
-    
+async def logout(request: Request, db: AsyncSession = Depends(get_db)):
+    raw = request.cookies.get("soc_session")
+    if not raw:
+        header = request.headers.get("authorization") or ""
+        if header.lower().startswith("bearer "):
+            raw = header.split(" ", 1)[1].strip()
+    actor = "anonymous"
+    if raw:
+        try:
+            payload = decode_access_token(raw)
+            jti = payload.get("jti")
+            if jti:
+                revoke_token(jti)
+            user_id = payload.get("sub")
+            if user_id:
+                user = (await db.execute(select(User).where(User.id == int(user_id)))).scalar_one_or_none()
+                if user:
+                    actor = user.username
+        except Exception:
+            pass
+    audit("session_invalidation", actor=actor, outcome="success")
+
     response = Response(status_code=status.HTTP_204_NO_CONTENT)
     response.delete_cookie(key="soc_session", path="/", httponly=True, samesite="lax")
     return response

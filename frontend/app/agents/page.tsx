@@ -203,6 +203,44 @@ export default function AgentsPage() {
     }
   }
 
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'ONLINE' | 'OFFLINE' | 'UNKNOWN' | 'RETIRED'>('ONLINE')
+  const [search, setSearch] = useState('')
+  const [fleetView, setFleetView] = useState<'ACTIVE' | 'HISTORICAL'>('ACTIVE')
+
+  const counts = {
+    all: agents.length,
+    active: agents.filter(a => a.status !== 'RETIRED').length,
+    online: agents.filter(a => a.status === 'ONLINE').length,
+    offline: agents.filter(a => a.status === 'OFFLINE').length,
+    unknown: agents.filter(a => a.status === 'UNKNOWN').length,
+    retired: agents.filter(a => a.status === 'RETIRED').length
+  }
+
+  const filteredAgents = agents.filter(a => {
+    // Fleet vs Historical View partition
+    if (fleetView === 'ACTIVE') {
+      if (a.status === 'RETIRED') return false
+      if (statusFilter === 'ONLINE' && a.status !== 'ONLINE') return false
+      if (statusFilter === 'OFFLINE' && a.status !== 'OFFLINE') return false
+      if (statusFilter === 'UNKNOWN' && a.status !== 'UNKNOWN') return false
+    } else {
+      // Historical view shows retired records
+      if (a.status !== 'RETIRED') return false
+    }
+
+    if (search.trim()) {
+      const q = search.toLowerCase()
+      const host = (a.hostname || '').toLowerCase()
+      const ip = (a.ip_address || '').toLowerCase()
+      const os = (a.operating_system || '').toLowerCase()
+      const id = (a.agent_id || '').toLowerCase()
+      if (!host.includes(q) && !ip.includes(q) && !os.includes(q) && !id.includes(q)) {
+        return false
+      }
+    }
+    return true
+  })
+
   if (loading) return <LoadingState message="Loading agents..." />
   if (error) return <ErrorState message={error} retry={loadAgents} />
 
@@ -232,8 +270,8 @@ export default function AgentsPage() {
         />
       )}
       <PageHeader
-        title="Agents"
-        description="Manage SOC telemetry collectors deployed across your fleet"
+        title="Agents & Endpoint Fleet"
+        description="Monitor active collectors, filter by health/heartbeat, and access historical endpoint telemetry"
         actions={
           <div className="flex items-center space-x-3">
             {eligibleAgents.length > 0 && (
@@ -246,18 +284,107 @@ export default function AgentsPage() {
             )}
             <button
               onClick={() => setIsAddModalOpen(true)}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded text-sm transition-colors"
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded text-sm transition-colors font-medium shadow-sm"
             >
-              Add Endpoint
+              + Add Endpoint
             </button>
           </div>
         }
       />
 
+      {/* Fleet View Switcher & Status Filter Bar */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-gray-950/60 p-3 rounded-lg border border-gray-800">
+        <div className="flex items-center space-x-2">
+          {/* Active Fleet vs Historical Toggle */}
+          <div className="inline-flex rounded-lg border border-gray-800 p-0.5 bg-gray-900">
+            <button
+              onClick={() => { setFleetView('ACTIVE'); setStatusFilter('ALL'); }}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
+                fleetView === 'ACTIVE'
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              Active Fleet ({counts.active})
+            </button>
+            <button
+              onClick={() => { setFleetView('HISTORICAL'); setStatusFilter('RETIRED'); }}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
+                fleetView === 'HISTORICAL'
+                  ? 'bg-orange-600 text-white'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              Retired History ({counts.retired})
+            </button>
+          </div>
+
+          {/* Sub-status filter pills for Active Fleet */}
+          {fleetView === 'ACTIVE' && (
+            <div className="flex items-center space-x-1 pl-2 border-l border-gray-800">
+              <button
+                onClick={() => setStatusFilter('ALL')}
+                className={`px-2.5 py-1 text-xs rounded transition-colors ${
+                  statusFilter === 'ALL'
+                    ? 'bg-gray-800 text-white font-medium border border-gray-700'
+                    : 'text-gray-400 hover:text-gray-200'
+                }`}
+              >
+                All ({counts.active})
+              </button>
+              <button
+                onClick={() => setStatusFilter('ONLINE')}
+                className={`px-2.5 py-1 text-xs rounded transition-colors flex items-center space-x-1 ${
+                  statusFilter === 'ONLINE'
+                    ? 'bg-emerald-950/80 text-emerald-300 font-medium border border-emerald-700'
+                    : 'text-gray-400 hover:text-gray-200'
+                }`}
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                <span>Online ({counts.online})</span>
+              </button>
+              <button
+                onClick={() => setStatusFilter('OFFLINE')}
+                className={`px-2.5 py-1 text-xs rounded transition-colors flex items-center space-x-1 ${
+                  statusFilter === 'OFFLINE'
+                    ? 'bg-red-950/80 text-red-300 font-medium border border-red-700'
+                    : 'text-gray-400 hover:text-gray-200'
+                }`}
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
+                <span>Offline ({counts.offline})</span>
+              </button>
+              <button
+                onClick={() => setStatusFilter('UNKNOWN')}
+                className={`px-2.5 py-1 text-xs rounded transition-colors flex items-center space-x-1 ${
+                  statusFilter === 'UNKNOWN'
+                    ? 'bg-yellow-950/80 text-yellow-300 font-medium border border-yellow-700'
+                    : 'text-gray-400 hover:text-gray-200'
+                }`}
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-yellow-400" />
+                <span>Unknown ({counts.unknown})</span>
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Search Input */}
+        <div className="w-full sm:w-64">
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search hostname, IP, OS, agent ID..."
+            className="w-full bg-gray-900 border border-gray-800 rounded px-3 py-1.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
+          />
+        </div>
+      </div>
+
       <Card>
         <CardContent className="p-0">
           <DataTable
-            data={agents}
+            data={filteredAgents}
             keyExtractor={(r) => r.agent_id}
             columns={[
               { key: 'status', title: 'Status', render: (r) => <StatusBadge status={r.status} /> },

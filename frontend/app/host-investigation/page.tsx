@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useCallback, Suspense } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { api } from '@/lib/api'
@@ -65,8 +65,20 @@ function HostInvestigationContent() {
   // Real-time WebSocket integration
   const { lastMessage } = useWebSocket()
 
-  // Time preset to bounds helper
-  const calculateTimeBounds = useCallback((): { start?: string; end?: string } => {
+  // References to keep callbacks stable and avoid re-triggering effects
+  const activeHostRef = useRef(activeHost)
+  activeHostRef.current = activeHost
+  const overviewRef = useRef(overview)
+  overviewRef.current = overview
+  const activeTabRef = useRef(activeTab)
+  activeTabRef.current = activeTab
+  const eventsPageRef = useRef(eventsPage)
+  eventsPageRef.current = eventsPage
+  const alertsPageRef = useRef(alertsPage)
+  alertsPageRef.current = alertsPage
+
+  // Stable time bounds: memoized based only on primitive filter values
+  const timeBounds = useMemo(() => {
     if (timePreset === 'all') return {}
     if (timePreset === 'custom') {
       return {
@@ -88,6 +100,9 @@ function HostInvestigationContent() {
     }
   }, [timePreset, customStart, customEnd])
 
+  const timeBoundsRef = useRef(timeBounds)
+  timeBoundsRef.current = timeBounds
+
   // Sync URL query state
   const updateUrl = useCallback((newHost: string, newPreset: TimePreset, cStart = '', cEnd = '') => {
     const params = new URLSearchParams()
@@ -100,9 +115,10 @@ function HostInvestigationContent() {
     router.replace(`/host-investigation?${params.toString()}`)
   }, [router])
 
-  // Fetch Host Overview
+  // Fetch Host Overview (stable callback)
   const fetchOverview = useCallback(async (targetHost: string) => {
-    if (!targetHost.trim()) {
+    const trimmed = (targetHost || '').trim()
+    if (!trimmed) {
       setOverview(null)
       setError('')
       return
@@ -110,17 +126,17 @@ function HostInvestigationContent() {
     try {
       setLoading(true)
       setError('')
-      const bounds = calculateTimeBounds()
+      const bounds = timeBoundsRef.current
       const query: Record<string, any> = {}
       if (bounds.start) query.start_time = bounds.start
       if (bounds.end) query.end_time = bounds.end
 
-      const res = await api.get<any>(`/host-investigation/${encodeURIComponent(targetHost.trim())}`, query)
+      const res = await api.get<any>(`/host-investigation/${encodeURIComponent(trimmed)}`, query)
       
       try {
-        const devRes = await api.get<any[]>(`/analytics/deviations?entity_type=HOST&entity_id=${encodeURIComponent(targetHost.trim())}&limit=5`)
+        const devRes = await api.get<any[]>(`/analytics/deviations?entity_type=HOST&entity_id=${encodeURIComponent(trimmed)}&limit=5`)
         setDeviations(devRes || [])
-      } catch (e) {
+      } catch {
         setDeviations([])
       }
 
@@ -131,30 +147,58 @@ function HostInvestigationContent() {
     } finally {
       setLoading(false)
     }
-  }, [calculateTimeBounds])
+  }, [])
 
-  // Fetch Events for the Host
-  const fetchEvents = useCallback(async (targetHost: string) => {
-    if (!targetHost.trim()) {
+  // Debounced filters to prevent API spam while typing
+  const [debouncedEventCategory, setDebouncedEventCategory] = useState(eventCategoryFilter)
+  const [debouncedEventProtocol, setDebouncedEventProtocol] = useState(eventProtocolFilter)
+  const [debouncedEventSeverity, setDebouncedEventSeverity] = useState(eventSeverityFilter)
+  const [debouncedEventSearch, setDebouncedEventSearch] = useState(eventSearch)
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedEventCategory(eventCategoryFilter)
+      setDebouncedEventProtocol(eventProtocolFilter)
+      setDebouncedEventSeverity(eventSeverityFilter)
+      setDebouncedEventSearch(eventSearch)
+    }, 350)
+    return () => clearTimeout(timer)
+  }, [eventCategoryFilter, eventProtocolFilter, eventSeverityFilter, eventSearch])
+
+  const [debouncedAlertSeverity, setDebouncedAlertSeverity] = useState(alertSeverityFilter)
+  const [debouncedAlertStatus, setDebouncedAlertStatus] = useState(alertStatusFilter)
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedAlertSeverity(alertSeverityFilter)
+      setDebouncedAlertStatus(alertStatusFilter)
+    }, 350)
+    return () => clearTimeout(timer)
+  }, [alertSeverityFilter, alertStatusFilter])
+
+  // Fetch Events for the Host (stable callback)
+  const fetchEvents = useCallback(async (targetHost: string, page = 1) => {
+    const trimmed = (targetHost || '').trim()
+    if (!trimmed) {
       setEvents([])
       setEventsTotal(0)
       return
     }
     try {
       setEventsLoading(true)
-      const bounds = calculateTimeBounds()
+      const bounds = timeBoundsRef.current
       const query: Record<string, any> = {
-        page: eventsPage,
+        page,
         page_size: 50
       }
-      if (eventCategoryFilter.trim()) query.event_category = eventCategoryFilter.trim()
-      if (eventProtocolFilter.trim()) query.protocol = eventProtocolFilter.trim()
-      if (eventSeverityFilter.trim()) query.severity = eventSeverityFilter.trim()
-      if (eventSearch.trim()) query.search = eventSearch.trim()
+      if (debouncedEventCategory.trim()) query.event_category = debouncedEventCategory.trim()
+      if (debouncedEventProtocol.trim()) query.protocol = debouncedEventProtocol.trim()
+      if (debouncedEventSeverity.trim()) query.severity = debouncedEventSeverity.trim()
+      if (debouncedEventSearch.trim()) query.search = debouncedEventSearch.trim()
       if (bounds.start) query.start_time = bounds.start
       if (bounds.end) query.end_time = bounds.end
 
-      const res = await api.get<any>(`/host-investigation/${encodeURIComponent(targetHost.trim())}/events`, query)
+      const res = await api.get<any>(`/host-investigation/${encodeURIComponent(trimmed)}/events`, query)
       setEvents(res.items || [])
       setEventsTotal(res.total || 0)
     } catch {
@@ -163,28 +207,29 @@ function HostInvestigationContent() {
     } finally {
       setEventsLoading(false)
     }
-  }, [eventsPage, eventCategoryFilter, eventProtocolFilter, eventSeverityFilter, eventSearch, calculateTimeBounds])
+  }, [debouncedEventCategory, debouncedEventProtocol, debouncedEventSeverity, debouncedEventSearch])
 
-  // Fetch Alerts for the Host
-  const fetchAlerts = useCallback(async (targetHost: string) => {
-    if (!targetHost.trim()) {
+  // Fetch Alerts for the Host (stable callback)
+  const fetchAlerts = useCallback(async (targetHost: string, page = 1) => {
+    const trimmed = (targetHost || '').trim()
+    if (!trimmed) {
       setAlerts([])
       setAlertsTotal(0)
       return
     }
     try {
       setAlertsLoading(true)
-      const bounds = calculateTimeBounds()
+      const bounds = timeBoundsRef.current
       const query: Record<string, any> = {
-        page: alertsPage,
+        page,
         page_size: 50
       }
-      if (alertSeverityFilter.trim()) query.severity = alertSeverityFilter.trim()
-      if (alertStatusFilter.trim()) query.status = alertStatusFilter.trim()
+      if (debouncedAlertSeverity.trim()) query.severity = debouncedAlertSeverity.trim()
+      if (debouncedAlertStatus.trim()) query.status = debouncedAlertStatus.trim()
       if (bounds.start) query.start_time = bounds.start
       if (bounds.end) query.end_time = bounds.end
 
-      const res = await api.get<any>(`/host-investigation/${encodeURIComponent(targetHost.trim())}/alerts`, query)
+      const res = await api.get<any>(`/host-investigation/${encodeURIComponent(trimmed)}/alerts`, query)
       setAlerts(res.items || [])
       setAlertsTotal(res.total || 0)
     } catch {
@@ -193,59 +238,86 @@ function HostInvestigationContent() {
     } finally {
       setAlertsLoading(false)
     }
-  }, [alertsPage, alertSeverityFilter, alertStatusFilter, calculateTimeBounds])
+  }, [debouncedAlertSeverity, debouncedAlertStatus])
 
-  // Initial load or param changes
+  // Sync URL searchParam to local state if URL changes externally
   useEffect(() => {
-    if (hostParam) {
+    if (hostParam && hostParam !== activeHost) {
       setInputHost(hostParam)
       setActiveHost(hostParam)
-      fetchOverview(hostParam)
-      fetchEvents(hostParam)
-      fetchAlerts(hostParam)
     }
-  }, [hostParam, fetchOverview, fetchEvents, fetchAlerts])
+  }, [hostParam])
 
-  // Refetch when filters change
+  // Fetch overview when host or time bounds change
   useEffect(() => {
     if (activeHost) {
-      fetchEvents(activeHost)
+      fetchOverview(activeHost)
     }
-  }, [activeHost, eventsPage, eventCategoryFilter, eventProtocolFilter, eventSeverityFilter, eventSearch, fetchEvents])
+  }, [activeHost, timeBounds, fetchOverview])
 
+  // Fetch events only when activeTab is events
   useEffect(() => {
-    if (activeHost) {
-      fetchAlerts(activeHost)
+    if (activeHost && activeTab === 'events') {
+      fetchEvents(activeHost, eventsPage)
     }
-  }, [activeHost, alertsPage, alertSeverityFilter, alertStatusFilter, fetchAlerts])
+  }, [activeHost, activeTab, eventsPage, timeBounds, fetchEvents])
 
-  // Real-time WebSocket updates filtered specifically for this host
+  // Fetch alerts only when activeTab is alerts
   useEffect(() => {
-    if (!lastMessage || !activeHost || !overview) return
+    if (activeHost && activeTab === 'alerts') {
+      fetchAlerts(activeHost, alertsPage)
+    }
+  }, [activeHost, activeTab, alertsPage, timeBounds, fetchAlerts])
+
+  // Real-time WebSocket updates filtered specifically for this host with debounce timer
+  const wsDebounceTimerRef = useRef<NodeJS.Timeout>()
+  useEffect(() => {
+    if (!lastMessage || !activeHostRef.current || !overviewRef.current) return
 
     const { type, data } = lastMessage
+    const currentHost = activeHostRef.current
+    const currentOverview = overviewRef.current
+
+    let shouldRefresh = false
     if (type === 'new_event') {
       const evHname = data?.hostname || ''
       const evHostId = String(data?.host_id || '')
-      const curHname = overview.host?.hostname || activeHost
-      const curHostId = String(overview.host?.id || '')
+      const curHname = currentOverview.host?.hostname || currentHost
+      const curHostId = String(currentOverview.host?.id || '')
       if (evHname === curHname || evHostId === curHostId) {
-        fetchOverview(activeHost)
-        if (activeTab === 'events' && eventsPage === 1) {
-          fetchEvents(activeHost)
-        }
+        shouldRefresh = true
       }
     } else if (type === 'new_alert' || type === 'alert_updated') {
       const alHostId = String(data?.host_id || '')
-      const curHostId = String(overview.host?.id || '')
+      const curHostId = String(currentOverview.host?.id || '')
       if (alHostId === curHostId) {
-        fetchOverview(activeHost)
-        if (activeTab === 'alerts' && alertsPage === 1) {
-          fetchAlerts(activeHost)
-        }
+        shouldRefresh = true
       }
     }
-  }, [lastMessage, activeHost, overview, activeTab, eventsPage, alertsPage, fetchOverview, fetchEvents, fetchAlerts])
+
+    if (shouldRefresh) {
+      if (wsDebounceTimerRef.current) {
+        clearTimeout(wsDebounceTimerRef.current)
+      }
+      wsDebounceTimerRef.current = setTimeout(() => {
+        const host = activeHostRef.current
+        if (!host) return
+        fetchOverview(host)
+        if (activeTabRef.current === 'events' && eventsPageRef.current === 1) {
+          fetchEvents(host, 1)
+        }
+        if (activeTabRef.current === 'alerts' && alertsPageRef.current === 1) {
+          fetchAlerts(host, 1)
+        }
+      }, 3000) // 3-second debounce to consolidate burst events
+    }
+
+    return () => {
+      if (wsDebounceTimerRef.current) {
+        clearTimeout(wsDebounceTimerRef.current)
+      }
+    }
+  }, [lastMessage, fetchOverview, fetchEvents, fetchAlerts])
 
   // Search submit handler
   const handleSearchSubmit = (e: React.FormEvent) => {
@@ -256,20 +328,14 @@ function HostInvestigationContent() {
     setEventsPage(1)
     setAlertsPage(1)
     updateUrl(cleanHost, timePreset, customStart, customEnd)
-    fetchOverview(cleanHost)
-    fetchEvents(cleanHost)
-    fetchAlerts(cleanHost)
   }
 
   // Handle Preset change
   const handlePresetChange = (preset: TimePreset) => {
     setTimePreset(preset)
+    setEventsPage(1)
+    setAlertsPage(1)
     updateUrl(activeHost, preset, customStart, customEnd)
-    if (activeHost) {
-      fetchOverview(activeHost)
-      fetchEvents(activeHost)
-      fetchAlerts(activeHost)
-    }
   }
 
   return (
@@ -358,12 +424,9 @@ function HostInvestigationContent() {
           />
           <button
             onClick={() => {
+              setEventsPage(1)
+              setAlertsPage(1)
               updateUrl(activeHost, 'custom', customStart, customEnd)
-              if (activeHost) {
-                fetchOverview(activeHost)
-                fetchEvents(activeHost)
-                fetchAlerts(activeHost)
-              }
             }}
             className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium"
           >

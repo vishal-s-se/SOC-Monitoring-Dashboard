@@ -129,14 +129,21 @@ export function AlertDetailsModal({ alert, onClose }: Props) {
           )}
 
           {/* MITRE ATT&CK Section (Phase 7E-1) */}
-          {mitreMappings && mitreMappings.length > 0 && (
-            <div className="border-t border-gray-800 pt-4">
-              <h4 className="text-sm font-semibold text-gray-300 mb-3 flex items-center space-x-2">
-                <span>MITRE ATT&CK Techniques</span>
+          <div className="border-t border-gray-800 pt-4">
+            <h4 className="text-sm font-semibold text-gray-300 mb-3 flex items-center space-x-2">
+              <span>MITRE ATT&CK Techniques</span>
+              {mitreMappings && mitreMappings.length > 0 && (
                 <span className="text-xs bg-red-950 text-red-300 border border-red-800 px-2 py-0.5 rounded font-mono">
                   {mitreMappings.length}
                 </span>
-              </h4>
+              )}
+            </h4>
+            
+            {(!mitreMappings || mitreMappings.length === 0) ? (
+              <div className="p-3 bg-[#151922] border border-gray-800 rounded-lg">
+                <span className="text-sm text-gray-500 italic">Not mapped</span>
+              </div>
+            ) : (
               <div className="space-y-2">
                 {mitreMappings.map(m => (
                   <div key={`${m.id}-${m.technique_id}`} className="p-3 bg-[#151922] border border-gray-800 rounded-lg flex items-center justify-between">
@@ -189,8 +196,8 @@ export function AlertDetailsModal({ alert, onClose }: Props) {
                   </div>
                 ))}
               </div>
-            </div>
-          )}
+            )}
+          </div>
 
           {/* Metadata */}
           {alert.metadata_ && Object.keys(alert.metadata_).length > 0 && (

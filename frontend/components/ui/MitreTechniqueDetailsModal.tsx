@@ -266,7 +266,15 @@ export function MitreTechniqueDetailsModal({ technique, onClose }: Props) {
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t border-gray-800 bg-[#121620] flex justify-end">
+        <div className="p-4 border-t border-gray-800 bg-[#121620] flex justify-between items-center">
+          <a
+            href={`https://attack.mitre.org/techniques/${technique.technique_id.replace('.', '/')}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs text-blue-400 hover:text-blue-300 flex items-center space-x-1"
+          >
+            <span>View on MITRE ATT&CK ↗</span>
+          </a>
           <button
             onClick={onClose}
             className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-200 rounded-lg text-sm transition-colors"

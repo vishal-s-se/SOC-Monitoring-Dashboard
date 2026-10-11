@@ -1,0 +1,23 @@
+[Unit]
+Description=SOC Monitor Endpoint Agent
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=soc-agent
+Group=soc-agent
+WorkingDirectory=/opt/soc-monitor-agent
+ExecStart=/opt/soc-monitor-agent/soc-agent --config /etc/soc-monitor-agent/agent.yml
+EnvironmentFile=-/etc/soc-monitor-agent/agent.env
+StateDirectory=soc-monitor-agent
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/soc-monitor-agent
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,29 @@
+collector:
+  host: "127.0.0.1"
+  port: 5000
+  tls: false
+  auth_token: ""
+
+agent:
+  # A UUID is generated in id_file on first start; hostname is detected from the OS.
+  id_file: "agent_id.txt"
+  state_dir: "state"
+  heartbeat_interval: 60
+  buffer_max_events: 1000
+  collection_interval: 5
+  retry_max_delay: 60
+  max_payload_bytes: 1048576
+  journald_enabled: false
+
+windows:
+  channels:
+    - "Security"
+    - "System"
+    - "Application"
+
+linux:
+  log_paths:
+    - "/var/log/auth.log"
+    - "/var/log/syslog"
+    - "/var/log/messages"
+    - "/var/log/secure"

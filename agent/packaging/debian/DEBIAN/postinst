@@ -1,0 +1,34 @@
+#!/bin/sh
+set -e
+
+if ! getent passwd soc-agent > /dev/null 2>&1; then
+    useradd --system --no-create-home soc-agent
+fi
+
+# Add to adm and systemd-journal if they exist
+if getent group adm > /dev/null 2>&1; then
+    usermod -aG adm soc-agent
+fi
+if getent group systemd-journal > /dev/null 2>&1; then
+    usermod -aG systemd-journal soc-agent
+fi
+
+# Provision config and env file
+mkdir -p /etc/soc-monitor-agent
+chown -R soc-agent:soc-agent /etc/soc-monitor-agent
+if [ ! -f /etc/soc-monitor-agent/agent.env ]; then
+    touch /etc/soc-monitor-agent/agent.env
+    chmod 0600 /etc/soc-monitor-agent/agent.env
+    chown soc-agent:soc-agent /etc/soc-monitor-agent/agent.env
+fi
+
+# Provision state dir (systemd handles this via StateDirectory, but safe to prep)
+mkdir -p /var/lib/soc-monitor-agent
+chown soc-agent:soc-agent /var/lib/soc-monitor-agent
+
+# Systemd daemon reload and enable
+if [ -d /run/systemd/system ]; then
+    systemctl daemon-reload
+    systemctl enable soc-agent || true
+    systemctl start soc-agent || true
+fi

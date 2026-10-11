@@ -41,7 +41,7 @@ async def list_events(
     if hostname:
         stmt = stmt.where(EventModel.hostname.ilike(f"%{hostname}%"))
     if operating_system:
-        stmt = stmt.where(func.lower(EventModel.operating_system) == operating_system.lower())
+        stmt = stmt.where(EventModel.operating_system.ilike(f"%{operating_system}%"))
     if source_type:
         stmt = stmt.where(EventModel.source_type == source_type)
     if event_category:

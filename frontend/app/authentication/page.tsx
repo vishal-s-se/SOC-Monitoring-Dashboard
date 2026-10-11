@@ -1,6 +1,7 @@
 "use client"
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { api } from '@/lib/api'
 import { Card, CardContent } from '@/components/ui/Card'
 import { PageHeader, LoadingState, ErrorState, EmptyState } from '@/components/ui/States'
@@ -11,7 +12,10 @@ import { FilterBar, FilterInput, FilterSelect } from '@/components/ui/FilterBar'
 import { Pagination } from '@/components/ui/Pagination'
 import { EventDetailsModal } from '@/components/ui/EventDetailsModal'
 
-export default function AuthenticationPage() {
+function AuthenticationContent() {
+  const searchParams = useSearchParams()
+  const osParam = searchParams.get('os')?.toLowerCase() || ''
+
   const [events, setEvents] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
@@ -51,6 +55,7 @@ export default function AuthenticationPage() {
         event_category: 'authentication',
         event_type: eventType || undefined,
         action: action || undefined,
+        operating_system: osParam || undefined,
         search: debouncedSearch || undefined
       })
       setEvents(res.items || [])
@@ -61,7 +66,7 @@ export default function AuthenticationPage() {
     } finally {
       setLoading(false)
     }
-  }, [page, pageSize, action, eventType, debouncedSearch])
+  }, [page, pageSize, action, eventType, debouncedSearch, osParam])
 
   useEffect(() => {
     loadData()
@@ -72,6 +77,10 @@ export default function AuthenticationPage() {
       const newEvent = lastMessage.data
 
       if (newEvent.event_category?.toLowerCase() === 'authentication' || newEvent.event_type?.toLowerCase().includes('logon') || newEvent.event_type?.toLowerCase().includes('login')) {
+        if (osParam) {
+          const evOs = (newEvent.operating_system || newEvent.agent?.operating_system || '').toLowerCase()
+          if (!evOs.includes(osParam)) return
+        }
         if (action && newEvent.action?.toLowerCase() !== action.toLowerCase()) return
         if (eventType && newEvent.event_type?.toLowerCase() !== eventType.toLowerCase()) return
 
@@ -88,14 +97,29 @@ export default function AuthenticationPage() {
         }
       }
     }
-  }, [lastMessage, page, action, eventType])
+  }, [lastMessage, page, action, eventType, osParam])
+
+  const title = osParam
+    ? `${osParam.charAt(0).toUpperCase() + osParam.slice(1)} Authentication Events`
+    : 'Authentication Events'
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Authentication Events"
-        description="Monitor user logins, authentication failures, and access events"
-      />
+      <div className="flex items-center justify-between">
+        <PageHeader
+          title={title}
+          description="Monitor user logins, authentication failures, and access events"
+        />
+        {osParam && (
+          <span className={`inline-flex items-center rounded-md px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${
+            osParam === 'windows'
+              ? 'bg-sky-500/10 text-sky-400 ring-sky-500/20'
+              : 'bg-amber-500/10 text-amber-400 ring-amber-500/20'
+          }`}>
+            {osParam.toUpperCase()} Filtered
+          </span>
+        )}
+      </div>
 
       <FilterBar>
         <div className="flex-1">
@@ -140,7 +164,11 @@ export default function AuthenticationPage() {
       ) : events.length === 0 ? (
         <EmptyState
           title="No authentication events found"
-          description="Adjust your filters or wait for new telemetry."
+          description={
+            osParam === 'linux'
+              ? "No Linux authentication events logged yet (such as sshd logins, sudo authentications, or PAM logs)."
+              : "Adjust your filters or wait for new telemetry."
+          }
         />
       ) : (
         <Card>
@@ -163,8 +191,15 @@ export default function AuthenticationPage() {
                 { key: 'username', title: 'User', render: (r) => r.username || 'N/A' },
                 { key: 'event_type', title: 'Type', render: (r) => r.event_type || 'N/A' },
                 { key: 'source_ip', title: 'Source IP', render: (r) => r.source_ip || 'N/A' },
-                { key: 'hostname', title: 'Host', render: (r) => r.hostname || 'N/A' },
-                { key: 'source', title: 'Source', render: (r) => r.source_type || 'N/A' },
+                { key: 'hostname', title: 'Endpoint', render: (r) => (
+                  <span className="font-semibold text-blue-400">{r.hostname || '-'}</span>
+                )},
+                { key: 'operating_system', title: 'OS', render: (r) => (
+                  <span className="text-gray-300 text-xs capitalize">{r.operating_system || '-'}</span>
+                )},
+                { key: 'source', title: 'Log Source', render: (r) => (
+                  <span className="text-gray-400 font-mono text-xs">{r.source_type || r.source || '-'}</span>
+                )},
                 { key: 'severity', title: 'Severity', render: (r) => <SeverityBadge severity={r.severity || 'INFO'} /> }
               ]}
             />
@@ -185,5 +220,13 @@ export default function AuthenticationPage() {
         />
       )}
     </div>
+  )
+}
+
+export default function AuthenticationPage() {
+  return (
+    <Suspense fallback={<LoadingState message="Loading Authentication..." />}>
+      <AuthenticationContent />
+    </Suspense>
   )
 }

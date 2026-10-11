@@ -1,0 +1,11 @@
+#!/bin/sh
+set -e
+
+if [ "$1" = "purge" ]; then
+    rm -rf /opt/soc-monitor-agent
+    rm -rf /etc/soc-monitor-agent
+    rm -rf /var/lib/soc-monitor-agent
+    if getent passwd soc-agent > /dev/null 2>&1; then
+        userdel soc-agent
+    fi
+fi

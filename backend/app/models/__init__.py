@@ -13,3 +13,4 @@ from backend.app.models.investigation import Investigation, InvestigationEvidenc
 from backend.app.models.mitre import MitreTactic, MitreTechnique, MitreTechniqueTactic, MitreMapping, MitreTargetType, MitreMappingSource, MitreConfidence
 from .analytics import BehaviorBaseline, BehaviorDeviation, BehaviorDeviationEvidence, BehaviorCorrelation
 from backend.app.models.retention import RetentionPolicy, CleanupAuditLog
+from .enrollment import EnrollmentCode

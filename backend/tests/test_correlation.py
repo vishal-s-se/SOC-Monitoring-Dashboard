@@ -12,7 +12,20 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 from sqlalchemy.pool import NullPool
 import os
 
-url = os.getenv("TEST_DATABASE_URL", "postgresql+asyncpg://postgres:Vishal%402006@localhost:5432/soc_monitor_test")
+from sqlalchemy.engine import make_url
+
+url = os.getenv("TEST_DATABASE_URL")
+if not url:
+    raise ValueError("Missing required environment variable")
+
+parsed_url = make_url(url)
+if parsed_url.drivername != "postgresql+asyncpg":
+    raise ValueError("Invalid drivername")
+if parsed_url.host not in ["localhost", "127.0.0.1"]:
+    raise ValueError("Invalid host")
+if parsed_url.database != "soc_monitor_test":
+    raise ValueError("Invalid database")
+
 engine = create_async_engine(url, poolclass=NullPool)
 TestingSessionLocal = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
 

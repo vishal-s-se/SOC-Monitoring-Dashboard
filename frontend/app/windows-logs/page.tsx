@@ -157,14 +157,22 @@ export default function WindowsLogsPage() {
               onRowClick={setSelectedEvent}
               columns={[
                 { key: 'timestamp', title: 'Time', render: (r) => new Date(r.timestamp).toLocaleString() },
-                { key: 'event_id_disp', title: 'Event ID', render: (r) => (r.metadata_?.event_id) || '-' },
-                { key: 'source', title: 'Channel', render: (r) => r.source_type || r.source || '-' },
-                { key: 'event_type', title: 'Type', render: (r) => <span className="font-medium text-gray-200">{r.event_type}</span> },
-                { key: 'hostname', title: 'Host' },
+                { key: 'hostname', title: 'Endpoint', render: (r) => (
+                  <span className="font-semibold text-blue-400">{r.hostname || '-'}</span>
+                )},
+                { key: 'event_id_disp', title: 'Event ID', render: (r) => (
+                  <span className="font-mono text-emerald-400 font-semibold">{r.metadata_?.EventID || r.metadata_?.event_id || r.event_type || '-'}</span>
+                )},
+                { key: 'record_id_disp', title: 'Record ID', render: (r) => (
+                  <span className="font-mono text-gray-400">{r.metadata_?.EventRecordID || '-'}</span>
+                )},
+                { key: 'source', title: 'Channel / Provider', render: (r) => (
+                  <span className="text-gray-300">{r.metadata_?.Channel || r.source_type || r.source || '-'}</span>
+                )},
                 { key: 'severity', title: 'Severity', render: (r) => <SeverityBadge severity={r.severity || 'INFO'} /> },
-                { key: 'username', title: 'User', render: (r) => r.username || '-' },
-                { key: 'message', title: 'Message', render: (r) => (
-                  <span className="truncate max-w-xs block text-gray-400">
+                { key: 'username', title: 'User / Account', render: (r) => r.username || '-' },
+                { key: 'message', title: 'Rendered Description / Action', render: (r) => (
+                  <span className="truncate max-w-xs block text-gray-400 font-mono text-xs">
                     {r.metadata_?.message || r.action || '-'}
                   </span>
                 )}

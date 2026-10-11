@@ -81,6 +81,9 @@ class MetricOverviewResponse(BaseModel):
     investigations_active: int
     behavioral_deviations: int
     generated_at: datetime
+    # Aliases for dashboard UI compatibility
+    total_events: Optional[int] = None
+    open_alerts: Optional[int] = None
 
 class MetricTimeSeriesPoint(BaseModel):
     timestamp: datetime

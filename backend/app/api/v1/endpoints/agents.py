@@ -39,24 +39,21 @@ async def list_agents(
     result = await db.execute(stmt)
     db_items = result.scalars().all()
     
-    # Calculate accurate status based on last_heartbeat (5 min threshold)
+    # Calculate accurate status based on last_heartbeat (5 min threshold), preserving RETIRED
     items = []
     now = datetime.now(timezone.utc)
     for agent in db_items:
-        # Pydantic schemas will be built from these objects. 
-        # We can dynamically override the status before it gets serialized if we modify the object.
-        # But mutating the SQLAlchemy object might mark it dirty. Let's just update the status logic.
-        if agent.last_heartbeat is None:
+        if agent.status == "RETIRED":
+            computed_status = "RETIRED"
+        elif agent.last_heartbeat is None:
             computed_status = "UNKNOWN"
         else:
-            # Ensure timezone awareness for comparison
             hb_time = agent.last_heartbeat if agent.last_heartbeat.tzinfo else agent.last_heartbeat.replace(tzinfo=timezone.utc)
             if now - hb_time > timedelta(minutes=5):
                 computed_status = "OFFLINE"
             else:
                 computed_status = "ONLINE"
                 
-        # We temporarily set the status attribute so it serializes correctly.
         agent.status = computed_status
         items.append(agent)
 
@@ -76,7 +73,9 @@ async def get_agent(id: int, db: AsyncSession = Depends(get_db)):
         
     from datetime import datetime, timezone, timedelta
     now = datetime.now(timezone.utc)
-    if agent.last_heartbeat is None:
+    if agent.status == "RETIRED":
+        pass
+    elif agent.last_heartbeat is None:
         agent.status = "UNKNOWN"
     else:
         hb_time = agent.last_heartbeat if agent.last_heartbeat.tzinfo else agent.last_heartbeat.replace(tzinfo=timezone.utc)
@@ -239,10 +238,25 @@ async def download_agent(os_type: str):
     elif os_type == "linux":
         file_path = os.path.join(base_dir, "soc-monitor-agent_0.1.0_amd64.deb")
         filename = "soc-monitor-agent_0.1.0_amd64.deb"
-    elif os_type == "script/windows/install":
+    elif os_type in ["script/windows/install", "install-agent.ps1"]:
+        file_path = os.path.join(base_dir, "install-agent.ps1")
+        filename = "install-agent.ps1"
+    elif os_type in ["script/windows/uninstall", "uninstall-agent.ps1"]:
+        file_path = os.path.join(base_dir, "uninstall-agent.ps1")
+        filename = "uninstall-agent.ps1"
+    elif os_type in ["script/linux/install", "install-agent.sh"]:
+        file_path = os.path.join(base_dir, "install-agent.sh")
+        filename = "install-agent.sh"
+    elif os_type in ["script/linux/uninstall", "uninstall-agent.sh"]:
+        file_path = os.path.join(base_dir, "uninstall-agent.sh")
+        filename = "uninstall-agent.sh"
+    elif os_type in ["checksums", "sha256sums", "SHA256SUMS"]:
+        file_path = os.path.join(base_dir, "SHA256SUMS")
+        filename = "SHA256SUMS"
+    elif os_type == "Install-SOCAgent.ps1":
         file_path = os.path.join(base_dir, "Install-SOCAgent.ps1")
         filename = "Install-SOCAgent.ps1"
-    elif os_type == "script/windows/uninstall":
+    elif os_type == "Uninstall-SOCAgent.ps1":
         file_path = os.path.join(base_dir, "Uninstall-SOCAgent.ps1")
         filename = "Uninstall-SOCAgent.ps1"
     else:

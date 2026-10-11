@@ -122,18 +122,37 @@ async def get_deviation_correlations(
 @router.get("/overview", response_model=MetricOverviewResponse)
 async def get_analytics_overview(
     hours: int = 24,
+    operating_system: Optional[str] = None,
     db: AsyncSession = Depends(get_db)
 ):
     now = datetime.now(timezone.utc)
     start_time = now - timedelta(hours=hours)
     
-    events_res = await db.execute(select(func.count(Event.id)).where(Event.timestamp >= start_time))
+    event_stmt = select(func.count(Event.id)).where(Event.timestamp >= start_time)
+    if operating_system:
+        event_stmt = event_stmt.where(Event.operating_system.ilike(f"%{operating_system}%"))
+    events_res = await db.execute(event_stmt)
     events_count = events_res.scalar() or 0
     
-    alerts_open_res = await db.execute(select(func.count(Alert.id)).where(Alert.status == 'OPEN', Alert.first_seen >= start_time))
+    if operating_system:
+        alert_open_stmt = select(func.count(Alert.id)).outerjoin(Agent, Alert.agent_id == Agent.id).where(
+            Alert.status == 'OPEN',
+            Alert.first_seen >= start_time,
+            Agent.operating_system.ilike(f"%{operating_system}%")
+        )
+        alert_res_stmt = select(func.count(Alert.id)).outerjoin(Agent, Alert.agent_id == Agent.id).where(
+            Alert.status == 'RESOLVED',
+            Alert.first_seen >= start_time,
+            Agent.operating_system.ilike(f"%{operating_system}%")
+        )
+    else:
+        alert_open_stmt = select(func.count(Alert.id)).where(Alert.status == 'OPEN', Alert.first_seen >= start_time)
+        alert_res_stmt = select(func.count(Alert.id)).where(Alert.status == 'RESOLVED', Alert.first_seen >= start_time)
+
+    alerts_open_res = await db.execute(alert_open_stmt)
     alerts_open = alerts_open_res.scalar() or 0
     
-    alerts_res_res = await db.execute(select(func.count(Alert.id)).where(Alert.status == 'RESOLVED', Alert.first_seen >= start_time))
+    alerts_res_res = await db.execute(alert_res_stmt)
     alerts_resolved = alerts_res_res.scalar() or 0
     
     inv_res = await db.execute(select(func.count(Investigation.id)).where(Investigation.status != 'CLOSED', Investigation.created_at >= start_time))
@@ -145,7 +164,9 @@ async def get_analytics_overview(
     return MetricOverviewResponse(
         time_range=f"last_{hours}h",
         events_received=events_count,
+        total_events=events_count,
         alerts_open=alerts_open,
+        open_alerts=alerts_open,
         alerts_resolved=alerts_resolved,
         investigations_active=inv_active,
         behavioral_deviations=dev_count,
@@ -156,6 +177,7 @@ async def get_analytics_overview(
 async def get_analytics_timeseries(
     metric: str = Query("events", description="events or alerts"),
     hours: int = 24,
+    operating_system: Optional[str] = None,
     db: AsyncSession = Depends(get_db)
 ):
     now = datetime.now(timezone.utc)
@@ -164,14 +186,23 @@ async def get_analytics_timeseries(
     if metric == "events":
         model = Event
         time_col = Event.timestamp
+        stmt = select(
+            func.date_trunc('hour', time_col).label('hour_bucket'),
+            func.count(model.id).label('count')
+        ).where(time_col >= start_time)
+        if operating_system:
+            stmt = stmt.where(Event.operating_system.ilike(f"%{operating_system}%"))
+        stmt = stmt.group_by('hour_bucket').order_by('hour_bucket')
     else:
         model = Alert
         time_col = Alert.first_seen
-        
-    stmt = select(
-        func.date_trunc('hour', time_col).label('hour_bucket'),
-        func.count(model.id).label('count')
-    ).where(time_col >= start_time).group_by('hour_bucket').order_by('hour_bucket')
+        stmt = select(
+            func.date_trunc('hour', time_col).label('hour_bucket'),
+            func.count(model.id).label('count')
+        )
+        if operating_system:
+            stmt = stmt.outerjoin(Agent, Alert.agent_id == Agent.id).where(Agent.operating_system.ilike(f"%{operating_system}%"))
+        stmt = stmt.where(time_col >= start_time).group_by('hour_bucket').order_by('hour_bucket')
     
     result = await db.execute(stmt)
     rows = result.all()
@@ -222,18 +253,38 @@ from backend.app.models.agent import Agent
 from backend.app.models.mitre import MitreMapping
 
 @router.get("/telemetry", response_model=MetricTelemetryResponse)
-async def get_analytics_telemetry(hours: int = 24, db: AsyncSession = Depends(get_db)):
+async def get_analytics_telemetry(
+    hours: int = 24,
+    operating_system: Optional[str] = None,
+    db: AsyncSession = Depends(get_db)
+):
     start_time = datetime.now(timezone.utc) - timedelta(hours=hours)
     
-    total = (await db.execute(select(func.count(Event.id)).where(Event.timestamp >= start_time))).scalar() or 0
+    base_filter = [Event.timestamp >= start_time]
+    if operating_system:
+        base_filter.append(Event.operating_system.ilike(f"%{operating_system}%"))
+
+    total = (await db.execute(select(func.count(Event.id)).where(*base_filter))).scalar() or 0
     
-    cat_res = await db.execute(select(Event.event_category, func.count(Event.id)).where(Event.timestamp >= start_time).group_by(Event.event_category))
+    cat_res = await db.execute(
+        select(Event.event_category, func.count(Event.id))
+        .where(*base_filter)
+        .group_by(Event.event_category)
+    )
     by_category = {row[0] or "unknown": row[1] for row in cat_res.all()}
     
-    sev_res = await db.execute(select(Event.severity, func.count(Event.id)).where(Event.timestamp >= start_time).group_by(Event.severity))
+    sev_res = await db.execute(
+        select(Event.severity, func.count(Event.id))
+        .where(*base_filter)
+        .group_by(Event.severity)
+    )
     by_severity = {row[0] or "unknown": row[1] for row in sev_res.all()}
     
-    os_res = await db.execute(select(Event.operating_system, func.count(Event.id)).where(Event.timestamp >= start_time).group_by(Event.operating_system))
+    os_res = await db.execute(
+        select(Event.operating_system, func.count(Event.id))
+        .where(*base_filter)
+        .group_by(Event.operating_system)
+    )
     by_os = {row[0] or "unknown": row[1] for row in os_res.all()}
     
     return MetricTelemetryResponse(total_events=total, by_category=by_category, by_severity=by_severity, by_os=by_os)
@@ -267,14 +318,21 @@ async def get_analytics_investigations(hours: int = 24, db: AsyncSession = Depen
     return MetricInvestigationsResponse(total_investigations=total, by_status=by_status, by_severity=by_severity)
 
 @router.get("/agents", response_model=MetricAgentHealthResponse)
-async def get_analytics_agents(db: AsyncSession = Depends(get_db)):
-    total = (await db.execute(select(func.count(Agent.id)))).scalar() or 0
+async def get_analytics_agents(
+    operating_system: Optional[str] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    base_filter = [Agent.status != "RETIRED"]
+    if operating_system:
+        base_filter.append(Agent.operating_system.ilike(f"%{operating_system}%"))
+
+    total = (await db.execute(select(func.count(Agent.id)).where(*base_filter))).scalar() or 0
     
     now = datetime.now(timezone.utc)
     threshold = now - timedelta(minutes=5)
     
-    online = (await db.execute(select(func.count(Agent.id)).where(Agent.last_heartbeat >= threshold))).scalar() or 0
-    offline = total - online
+    online = (await db.execute(select(func.count(Agent.id)).where(*base_filter, Agent.last_heartbeat >= threshold))).scalar() or 0
+    offline = max(0, total - online)
     
     return MetricAgentHealthResponse(total_agents=total, online_agents=online, offline_agents=offline)
 

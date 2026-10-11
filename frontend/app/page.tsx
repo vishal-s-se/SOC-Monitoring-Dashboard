@@ -83,12 +83,12 @@ export default function OverviewPage() {
     UNKNOWN: '#6b7280'
   }
   
-  const COLORS_OS: Record<string, string> = {
-    WINDOWS: '#0ea5e9',
-    LINUX: '#fbbf24',
-    DEBIAN: '#fbbf24',
-    UBUNTU: '#fbbf24',
-    UNKNOWN: '#6b7280'
+  const getOsColor = (osName: string) => {
+    const upper = osName.toUpperCase()
+    if (upper.includes('WIN')) return '#0ea5e9' // Sky Blue
+    if (upper.includes('LINUX') || upper.includes('KALI') || upper.includes('DEBIAN') || upper.includes('UBUNTU')) return '#fbbf24' // Amber
+    if (upper.includes('MAC') || upper.includes('DARWIN')) return '#a855f7' // Purple
+    return '#6b7280' // Gray
   }
 
   const severityData = Object.entries(telemetry?.by_severity || {}).map(([name, value]) => ({
@@ -97,7 +97,7 @@ export default function OverviewPage() {
   }))
 
   const osData = Object.entries(telemetry?.by_os || {}).map(([name, value]) => ({
-    name: name.toUpperCase(),
+    name: name,
     value
   }))
 
@@ -124,8 +124,8 @@ export default function OverviewPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         <Card className="bg-gray-900 border-gray-800">
           <CardContent className="py-5">
-            <h3 className="text-gray-400 text-xs font-medium uppercase tracking-wider">Total Events</h3>
-            <p className="text-2xl font-bold text-white mt-1">{overview?.total_events?.toLocaleString() || 0}</p>
+            <h3 className="text-gray-400 text-xs font-medium uppercase tracking-wider">Total Events (24h)</h3>
+            <p className="text-2xl font-bold text-white mt-1">{(overview?.events_received ?? overview?.total_events ?? 0).toLocaleString()}</p>
           </CardContent>
         </Card>
         
@@ -154,7 +154,7 @@ export default function OverviewPage() {
           <CardContent className="py-5">
             <h3 className="text-gray-400 text-xs font-medium uppercase tracking-wider">Events/sec</h3>
             <p className="text-2xl font-bold text-blue-400 mt-1">
-              {((overview?.total_events || 0) / (24 * 3600)).toFixed(2)}
+              {(((overview?.events_received ?? overview?.total_events ?? 0)) / (24 * 3600)).toFixed(2)}
             </p>
           </CardContent>
         </Card>
@@ -162,7 +162,7 @@ export default function OverviewPage() {
         <Card className="bg-gray-900 border-gray-800">
           <CardContent className="py-5">
             <h3 className="text-gray-400 text-xs font-medium uppercase tracking-wider">Open Alerts</h3>
-            <p className="text-2xl font-bold text-white mt-1">{overview?.open_alerts || 0}</p>
+            <p className="text-2xl font-bold text-white mt-1">{overview?.alerts_open ?? overview?.open_alerts ?? 0}</p>
           </CardContent>
         </Card>
       </div>
@@ -216,7 +216,7 @@ export default function OverviewPage() {
                     className="cursor-pointer outline-none"
                   >
                     {osData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS_OS[entry.name] || COLORS_OS.UNKNOWN} />
+                      <Cell key={`cell-${index}`} fill={getOsColor(entry.name)} />
                     ))}
                   </Pie>
                   <Tooltip 

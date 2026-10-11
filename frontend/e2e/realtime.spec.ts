@@ -9,10 +9,14 @@ test.describe('Realtime WebSocket', () => {
 
     const uniqueUsername = `ws-user-${Date.now()}`;
 
+    if (!process.env.TEST_AGENT_SECRET) {
+      throw new Error("Missing TEST_AGENT_SECRET");
+    }
+
     // Send an event directly to the collector API
     await request.post('http://localhost:5000/api/v1/agent/events', {
       headers: {
-        'X-Agent-Auth': 'changeme_secret',
+        'X-Agent-Auth': process.env.TEST_AGENT_SECRET,
         'Content-Type': 'application/json'
       },
       data: {

@@ -157,15 +157,22 @@ export default function LinuxLogsPage() {
               onRowClick={setSelectedEvent}
               columns={[
                 { key: 'timestamp', title: 'Time', render: (r) => new Date(r.timestamp).toLocaleString() },
-                { key: 'event_type', title: 'Type', render: (r) => <span className="font-medium text-gray-200">{r.event_type}</span> },
-                { key: 'source', title: 'Source', render: (r) => r.source_type || r.source || '-' },
-                { key: 'hostname', title: 'Host' },
+                { key: 'hostname', title: 'Endpoint', render: (r) => (
+                  <span className="font-semibold text-blue-400">{r.hostname || '-'}</span>
+                )},
+                { key: 'source', title: 'Source / Ingestion', render: (r) => (
+                  <span className="text-gray-300 font-mono text-xs">{r.source_type || r.source || 'linux_journald'}</span>
+                )},
+                { key: 'unit', title: 'Unit / Process', render: (r) => (
+                  <span className="text-gray-200 font-mono text-xs">
+                    {r.metadata_?._SYSTEMD_UNIT || r.metadata_?.SYSLOG_IDENTIFIER || r.metadata_?._COMM || r.metadata_?.process_name || '-'}
+                  </span>
+                )},
                 { key: 'severity', title: 'Severity', render: (r) => <SeverityBadge severity={r.severity || 'INFO'} /> },
-                { key: 'username', title: 'User', render: (r) => r.username || '-' },
-                { key: 'process', title: 'Process', render: (r) => r.metadata_?.process_name || '-' },
-                { key: 'message', title: 'Message', render: (r) => (
-                  <span className="truncate max-w-xs block text-gray-400">
-                    {r.metadata_?.message || r.action || '-'}
+                { key: 'username', title: 'User / Account', render: (r) => r.username || (r.metadata_?._UID === '0' ? 'root (0)' : r.metadata_?._UID || '-') },
+                { key: 'message', title: 'Message / Log Entry', render: (r) => (
+                  <span className="truncate max-w-sm block text-gray-400 font-mono text-xs">
+                    {r.metadata_?.MESSAGE || r.metadata_?.message || r.action || '-'}
                   </span>
                 )}
               ]}

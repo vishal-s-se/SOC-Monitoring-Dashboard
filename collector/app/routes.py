@@ -20,13 +20,29 @@ router = APIRouter()
 async def register_agent(
     registration: AgentRegistration,
     db: AsyncSession = Depends(get_db),
-    auth: str = Depends(verify_agent_auth)
+    auth: dict = Depends(verify_agent_auth)
 ):
     stmt = select(Agent).where(Agent.agent_id == registration.agent_id)
     result = await db.execute(stmt)
     agent = result.scalar_one_or_none()
 
+    import uuid
+    import hashlib
+
+    def get_hash(s): return hashlib.sha256(s.encode()).hexdigest()
+
+    token_to_return = None
+    token_hash = None
+
+    if auth["type"] == "enrollment":
+        token_to_return = str(uuid.uuid4())
+        token_hash = get_hash(token_to_return)
+        code = auth["code"]
+        code.used = True
+
     if agent:
+        if token_hash:
+            agent.token_hash = token_hash
         old_status = agent.status
         agent.hostname = registration.hostname
         agent.operating_system = registration.operating_system
@@ -44,7 +60,10 @@ async def register_agent(
                 "previous_status": old_status
             })
 
-        return {"status": "ok", "message": "Agent updated", "agent_id": agent.agent_id}
+        resp = {"status": "ok", "message": "Agent updated", "agent_id": agent.agent_id}
+        if token_to_return:
+            resp["token"] = token_to_return
+        return resp
 
     stmt = select(Host).where(Host.hostname == registration.hostname)
     result = await db.execute(stmt)
@@ -75,7 +94,8 @@ async def register_agent(
         agent_version=registration.agent_version,
         ip_address=registration.ip_address,
         metadata_=registration.metadata_,
-        status="ONLINE"
+        status="ONLINE",
+        token_hash=token_hash
     )
     db.add(new_agent)
     await db.commit()
@@ -87,13 +107,16 @@ async def register_agent(
         "previous_status": "UNREGISTERED"
     })
 
-    return {"status": "ok", "message": "Agent registered successfully", "agent_id": new_agent.agent_id}
+    resp = {"status": "ok", "message": "Agent registered successfully", "agent_id": new_agent.agent_id}
+    if token_to_return:
+        resp["token"] = token_to_return
+    return resp
 
 @router.post("/heartbeat")
 async def receive_heartbeat(
     heartbeat_req: HeartbeatRequest,
     db: AsyncSession = Depends(get_db),
-    auth: str = Depends(verify_agent_auth)
+    auth: dict = Depends(verify_agent_auth)
 ):
     stmt = select(Agent).where(Agent.agent_id == heartbeat_req.agent_id)
     result = await db.execute(stmt)
@@ -104,6 +127,13 @@ async def receive_heartbeat(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Agent not found. Please register first."
         )
+
+    if auth["type"] == "token" and auth["agent"].agent_id != agent.agent_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token does not match agent."
+        )
+
 
     old_status = agent.status
     agent.last_heartbeat = heartbeat_req.timestamp
@@ -139,7 +169,7 @@ from .pipeline import process_event
 async def receive_event(
     event_req: EventRequest,
     db: AsyncSession = Depends(get_db),
-    auth: str = Depends(verify_agent_auth)
+    auth: dict = Depends(verify_agent_auth)
 ):
     stmt = select(Agent).where(Agent.agent_id == event_req.agent_id)
     result = await db.execute(stmt)
@@ -150,5 +180,12 @@ async def receive_event(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Agent not found. Please register first."
         )
+
+    if auth["type"] == "token" and auth["agent"].agent_id != agent.agent_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token does not match agent."
+        )
+
 
     return await process_event(event_req, agent, db)
