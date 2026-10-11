@@ -12,9 +12,11 @@ import { Pagination } from '@/components/ui/Pagination'
 import { useDebounce } from '@/hooks/useDebounce'
 import { FilterBar, FilterInput, FilterSelect } from '@/components/ui/FilterBar'
 import { AddToInvestigationModal } from '@/components/ui/AddToInvestigationModal'
+import { TrendAreaChart, CategoryBarChart, DistributionDonutChart } from '@/components/ui/TabCharts'
 
 export default function UnifiedExplorerPage() {
   const [loading, setLoading] = useState(true)
+  const [stats, setStats] = useState<any>(null)
   const [error, setError] = useState("")
   const [events, setEvents] = useState<any[]>([])
   
@@ -41,17 +43,21 @@ export default function UnifiedExplorerPage() {
   const loadData = useCallback(async () => {
     try {
       setLoading(true)
-      const res = await api.get<any>('/events', {
-        page,
-        page_size: pageSize,
-        severity: severity || undefined,
-        source_type: sourceType || undefined,
-        operating_system: os || undefined,
-        event_category: category || undefined,
-        search: debouncedSearch || undefined
-      })
+      const [res, statsRes] = await Promise.all([
+        api.get<any>('/events', {
+          page,
+          page_size: pageSize,
+          severity: severity || undefined,
+          source_type: sourceType || undefined,
+          operating_system: os || undefined,
+          event_category: category || undefined,
+          search: debouncedSearch || undefined
+        }),
+        api.get<any>(`/analytics/tab-stats?tab=unified&hours=24${os ? `&operating_system=${os}` : ''}`)
+      ])
       setEvents(res.items || [])
       setTotal(res.total || 0)
+      setStats(statsRes)
       setError("")
     } catch (err: any) {
       setError(err.message || "Failed to load events")
@@ -99,6 +105,31 @@ export default function UnifiedExplorerPage() {
         title="Unified Events & Logs Explorer"
         description="Search and filter normalized events along with their raw forensic payloads."
       />
+
+      {/* Cross-Platform Unified Visualizations */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <TrendAreaChart
+          title="Global Event Flow (24h)"
+          subtitle="Cross-platform hourly ingestion trajectory"
+          data={stats?.timeseries || []}
+          color="#3b82f6"
+        />
+        <DistributionDonutChart
+          title="Operating System Share"
+          subtitle="Windows vs Linux event volumes"
+          data={stats?.distribution1 || []}
+          onSliceClick={(item) => {
+            setOs(item.name.toLowerCase().includes('win') ? 'windows' : 'linux')
+            setPage(1)
+          }}
+        />
+        <CategoryBarChart
+          title="Severity & Risk Profile"
+          subtitle="Severity distribution across endpoints"
+          data={stats?.distribution2 || []}
+          color="#ec4899"
+        />
+      </div>
 
       <FilterBar>
         <div className="flex-1 min-w-[200px]">

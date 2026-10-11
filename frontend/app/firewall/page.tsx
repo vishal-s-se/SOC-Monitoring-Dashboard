@@ -13,6 +13,7 @@ import { SeverityBadge } from '@/components/ui/SeverityBadge'
 import { FilterBar, FilterInput, FilterSelect } from '@/components/ui/FilterBar'
 import { Pagination } from '@/components/ui/Pagination'
 import { EventDetailsModal } from '@/components/ui/EventDetailsModal'
+import { TrendAreaChart, CategoryBarChart, DistributionDonutChart } from '@/components/ui/TabCharts'
 
 function FirewallContent() {
   const searchParams = useSearchParams()
@@ -20,6 +21,7 @@ function FirewallContent() {
 
   const [events, setEvents] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [stats, setStats] = useState<any>(null)
   const [error, setError] = useState("")
   const [total, setTotal] = useState(0)
 
@@ -51,17 +53,21 @@ function FirewallContent() {
   const loadData = useCallback(async () => {
     try {
       setLoading(true)
-      const res = await api.get<any>('/events', {
-        page,
-        page_size: pageSize,
-        event_type: 'firewall',
-        action: action || undefined,
-        protocol: protocol || undefined,
-        operating_system: osParam || undefined,
-        search: debouncedSearch || undefined
-      })
+      const [res, statsRes] = await Promise.all([
+        api.get<any>('/events', {
+          page,
+          page_size: pageSize,
+          event_type: 'firewall',
+          action: action || undefined,
+          protocol: protocol || undefined,
+          operating_system: osParam || undefined,
+          search: debouncedSearch || undefined
+        }),
+        api.get<any>(`/analytics/tab-stats?tab=firewall&hours=24${osParam ? `&operating_system=${osParam}` : ''}`)
+      ])
       setEvents(res.items || [])
       setTotal(res.total || 0)
+      setStats(statsRes)
       setError("")
     } catch (err: any) {
       setError(err.message || "Failed to load Firewall events")
@@ -123,6 +129,31 @@ function FirewallContent() {
             {osParam.toUpperCase()} Filtered
           </span>
         )}
+      </div>
+
+      {/* Firewall Telemetry Visualizations */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <TrendAreaChart
+          title="Firewall Events (24h)"
+          subtitle="Hourly packet inspection and rule execution"
+          data={stats?.timeseries || []}
+          color={osParam === 'linux' ? '#f59e0b' : '#ef4444'}
+        />
+        <DistributionDonutChart
+          title="Allowed vs Blocked"
+          subtitle="Firewall enforcement decisions"
+          data={stats?.distribution1 || []}
+          onSliceClick={(item) => {
+            setAction(item.name)
+            setPage(1)
+          }}
+        />
+        <CategoryBarChart
+          title="Protocol Breakdown"
+          subtitle="Inspected transport protocols"
+          data={stats?.distribution2 || []}
+          color="#f97316"
+        />
       </div>
 
       <FilterBar>

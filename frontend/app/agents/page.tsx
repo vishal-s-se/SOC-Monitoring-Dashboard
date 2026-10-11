@@ -10,6 +10,7 @@ import { DataTable } from '@/components/ui/DataTable'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { AddEndpointModal } from '@/components/ui/AddEndpointModal'
 import { useWebSocket } from '@/hooks/useWebSocket'
+import { TrendAreaChart, CategoryBarChart, DistributionDonutChart } from '@/components/ui/TabCharts'
 
 function RetireConfirmDialog({
   agent,
@@ -132,6 +133,7 @@ function BulkRetireConfirmDialog({
 
 export default function AgentsPage() {
   const [agents, setAgents] = useState<any[]>([])
+  const [stats, setStats] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
@@ -145,8 +147,12 @@ export default function AgentsPage() {
   const loadAgents = async () => {
     try {
       setLoading(true)
-      const res = await api.get<any>('/agents/')
+      const [res, statsRes] = await Promise.all([
+        api.get<any>('/agents/'),
+        api.get<any>('/analytics/tab-stats?tab=hosts&hours=24')
+      ])
       setAgents(res.items || [])
+      setStats(statsRes)
     } catch (err: any) {
       setError(err.message || "Failed to load agents")
     } finally {
@@ -291,6 +297,26 @@ export default function AgentsPage() {
           </div>
         }
       />
+
+      {/* Fleet Telemetry Visualizations */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <DistributionDonutChart
+          title="Agent Health & Lifecycle"
+          subtitle="Real-time heartbeat & retirement status"
+          data={stats?.distribution1 || []}
+        />
+        <CategoryBarChart
+          title="Telemetry by Agent Host"
+          subtitle="Events received per collector agent (24h)"
+          data={stats?.distribution2 || []}
+          color="#3b82f6"
+        />
+        <DistributionDonutChart
+          title="Fleet OS Distribution"
+          subtitle="Breakdown of enrolled agent operating systems"
+          data={stats?.distribution3 || []}
+        />
+      </div>
 
       {/* Fleet View Switcher & Status Filter Bar */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-gray-950/60 p-3 rounded-lg border border-gray-800">

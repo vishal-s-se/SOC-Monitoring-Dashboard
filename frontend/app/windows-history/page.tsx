@@ -10,10 +10,12 @@ import { SeverityBadge } from '@/components/ui/SeverityBadge'
 import { FilterBar, FilterInput, FilterSelect } from '@/components/ui/FilterBar'
 import { Pagination } from '@/components/ui/Pagination'
 import { EventDetailsModal } from '@/components/ui/EventDetailsModal'
+import { TrendAreaChart, CategoryBarChart, DistributionDonutChart } from '@/components/ui/TabCharts'
 
 function WindowsHistoryContent() {
   const [events, setEvents] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [stats, setStats] = useState<any>(null)
   const [error, setError] = useState("")
   const [total, setTotal] = useState(0)
 
@@ -60,17 +62,21 @@ function WindowsHistoryContent() {
   const loadData = useCallback(async () => {
     try {
       setLoading(true)
-      const res = await api.get<any>('/events', {
-        page,
-        page_size: pageSize,
-        operating_system: 'windows',
-        channel: channel || undefined,
-        severity: severity || undefined,
-        agent_id: selectedAgentId || undefined,
-        search: (debouncedSearch || eventIdCode) ? `${debouncedSearch} ${eventIdCode}`.trim() : undefined
-      })
+      const [res, statsRes] = await Promise.all([
+        api.get<any>('/events', {
+          page,
+          page_size: pageSize,
+          operating_system: 'windows',
+          channel: channel || undefined,
+          severity: severity || undefined,
+          agent_id: selectedAgentId || undefined,
+          search: (debouncedSearch || eventIdCode) ? `${debouncedSearch} ${eventIdCode}`.trim() : undefined
+        }),
+        api.get<any>(`/analytics/tab-stats?tab=history&operating_system=windows&hours=168${selectedAgentId ? `&agent_id=${selectedAgentId}` : ''}`)
+      ])
       setEvents(res.items || [])
       setTotal(res.total || 0)
+      setStats(statsRes)
       setError("")
     } catch (err: any) {
       setError(err.message || "Failed to load Windows event history")
@@ -93,6 +99,31 @@ function WindowsHistoryContent() {
         <span className="inline-flex items-center rounded-md bg-sky-500/10 px-2.5 py-1 text-xs font-semibold text-sky-400 ring-1 ring-inset ring-sky-500/20">
           Windows Provenance
         </span>
+      </div>
+
+      {/* Forensic History Visualizations */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <TrendAreaChart
+          title="Historical Event Volume (7 Days)"
+          subtitle="Long-term Windows telemetry trend"
+          data={stats?.timeseries || []}
+          color="#38bdf8"
+        />
+        <DistributionDonutChart
+          title="Historical Severity"
+          subtitle="Archive severity distribution"
+          data={stats?.distribution3 || stats?.distribution1 || []}
+          onSliceClick={(item) => {
+            setSeverity(item.name)
+            setPage(1)
+          }}
+        />
+        <CategoryBarChart
+          title="Volume by Host / Agent"
+          subtitle="Provenance breakdown (active + retired)"
+          data={stats?.distribution2 || []}
+          color="#818cf8"
+        />
       </div>
 
       <FilterBar>

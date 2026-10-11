@@ -11,12 +11,15 @@ import { useWebSocket } from '@/hooks/useWebSocket'
 import { SeverityBadge } from '@/components/ui/SeverityBadge'
 import { EventDetailsModal } from '@/components/ui/EventDetailsModal'
 
+import { TrendAreaChart, CategoryBarChart, DistributionDonutChart } from '@/components/ui/TabCharts'
+
 function LiveEventsContent() {
   const searchParams = useSearchParams()
   const osParam = searchParams.get('os')?.toLowerCase() || ''
 
   const [events, setEvents] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [stats, setStats] = useState<any>(null)
   const [error, setError] = useState("")
   const [isLive, setIsLive] = useState(true)
   const [selectedEvent, setSelectedEvent] = useState<any | null>(null)
@@ -30,8 +33,12 @@ function LiveEventsContent() {
       if (osParam) {
         queryParams.operating_system = osParam
       }
-      const res = await api.get<any>('/events', queryParams)
+      const [res, statsRes] = await Promise.all([
+        api.get<any>('/events', queryParams),
+        api.get<any>(`/analytics/tab-stats?tab=live-events&hours=24${osParam ? `&operating_system=${osParam}` : ''}`)
+      ])
       setEvents(res.items || [])
+      setStats(statsRes)
     } catch (err: any) {
       setError(err.message || "Failed to load events")
     } finally {
@@ -101,6 +108,27 @@ function LiveEventsContent() {
           </div>
         }
       />
+
+      {/* Telemetry Visualizations */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <TrendAreaChart
+          title="Event Ingestion Rate (24h)"
+          subtitle="Hourly event volume over time"
+          data={stats?.timeseries || []}
+          color={osParam === 'linux' ? '#f59e0b' : '#0ea5e9'}
+        />
+        <DistributionDonutChart
+          title="Severity Distribution"
+          subtitle="Relative breakdown by event severity"
+          data={stats?.distribution1 || []}
+        />
+        <CategoryBarChart
+          title="Channels & Sources"
+          subtitle="Top log streams & telemetry providers"
+          data={stats?.distribution2 || []}
+          color="#8b5cf6"
+        />
+      </div>
 
       <Card>
         <CardContent className="p-0">

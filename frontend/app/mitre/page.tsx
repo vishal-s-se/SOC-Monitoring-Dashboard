@@ -8,11 +8,13 @@ import { TableSkeleton } from '@/components/ui/Skeleton'
 import { Pagination } from '@/components/ui/Pagination'
 import { MitreTechniqueDetailsModal } from '@/components/ui/MitreTechniqueDetailsModal'
 import { MitreGraphAnalysis } from '@/components/MitreGraphAnalysis'
+import { CategoryBarChart, DistributionDonutChart } from '@/components/ui/TabCharts'
 
 export default function MitrePage() {
   const [activeView, setActiveView] = useState<'log' | 'graph'>('log')
   const [tactics, setTactics] = useState<any[]>([])
   const [techniques, setTechniques] = useState<any[]>([])
+  const [mitreStats, setMitreStats] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
 
@@ -34,17 +36,21 @@ export default function MitrePage() {
   const [techniqueDetail, setTechniqueDetail] = useState<any>(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
 
-  // Fetch tactics for the filter bar
+  // Fetch tactics & analytics for the page
   useEffect(() => {
-    async function loadTactics() {
+    async function loadTacticsAndStats() {
       try {
-        const res = await api.get<any[]>('/mitre/tactics')
-        setTactics(res || [])
+        const [tacticsRes, statsRes] = await Promise.all([
+          api.get<any[]>('/mitre/tactics'),
+          api.get<any>('/analytics/mitre')
+        ])
+        setTactics(tacticsRes || [])
+        setMitreStats(statsRes)
       } catch (err) {
-        console.error("Failed to load tactics:", err)
+        console.error("Failed to load tactics or stats:", err)
       }
     }
-    loadTactics()
+    loadTacticsAndStats()
   }, [])
 
   // Fetch techniques for Log View
@@ -164,6 +170,28 @@ export default function MitrePage() {
           </div>
         }
       />
+
+      {/* MITRE ATT&CK Analytics Visualizations */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <CategoryBarChart
+          title="Evidence-Mapped Techniques by Tactic"
+          subtitle="Enterprise tactics covered by active detection rules"
+          data={Object.entries(mitreStats?.by_tactic || {}).map(([name, val]) => ({ name, value: Number(val) }))}
+          color="#3b82f6"
+          onBarClick={(item) => {
+            const found = tactics.find(t => t.name.toLowerCase() === item.name.toLowerCase())
+            if (found) {
+              setSelectedTactic(found.tactic_id)
+              setPage(1)
+            }
+          }}
+        />
+        <DistributionDonutChart
+          title="Tactic Coverage Distribution"
+          subtitle="Proportion of mapped techniques per attack phase"
+          data={Object.entries(mitreStats?.by_tactic || {}).map(([name, val]) => ({ name, value: Number(val) }))}
+        />
+      </div>
 
       {/* Filter Bar (Active in both views for consistent exploration) */}
       <Card>

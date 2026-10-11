@@ -15,6 +15,7 @@ import { AlertDetailsModal } from '@/components/ui/AlertDetailsModal'
 import { RawLogDetailsModal } from '@/components/ui/RawLogDetailsModal'
 import { MitreTechniqueDetailsModal } from '@/components/ui/MitreTechniqueDetailsModal'
 import { useWebSocket } from '@/hooks/useWebSocket'
+import { TrendAreaChart, CategoryBarChart, DistributionDonutChart } from '@/components/ui/TabCharts'
 
 type TimePreset = '15m' | '30m' | '1h' | '6h' | '24h' | 'all' | 'custom'
 type GroupByOption = 'none' | 'host' | 'category' | 'severity' | 'provenance' | 'tactic' | 'technique'
@@ -673,6 +674,50 @@ function AttackTimelineContent() {
     }))
   }, [items, groupBy])
 
+  // Real timeline evidence aggregations
+  const timelineAnalytics = useMemo(() => {
+    // 1. Time bucket histogram
+    const hourBuckets: Record<string, number> = {}
+    // 2. Category distribution
+    const catMap: Record<string, number> = {}
+    // 3. Provenance distribution
+    const provMap: Record<string, number> = {}
+
+    items.forEach(it => {
+      if (it.timestamp) {
+        const d = new Date(it.timestamp)
+        const hourKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:00`
+        hourBuckets[hourKey] = (hourBuckets[hourKey] || 0) + 1
+      }
+      const cat = it.event_category || 'uncategorized'
+      catMap[cat] = (catMap[cat] || 0) + 1
+
+      const prov = it.provenance === 'DIRECT_EVIDENCE'
+        ? 'Direct Evidence'
+        : it.provenance === 'CORRELATED_EVENT'
+        ? 'Correlated'
+        : it.provenance === 'ALERT_CONTEXT'
+        ? 'Alert Trigger'
+        : 'Other Activity'
+      provMap[prov] = (provMap[prov] || 0) + 1
+    })
+
+    const timeseries = Object.entries(hourBuckets)
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([timestamp, count]) => ({ timestamp, count }))
+
+    const byCategory = Object.entries(catMap)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8)
+      .map(([name, value]) => ({ name, value }))
+
+    const byProvenance = Object.entries(provMap)
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, value]) => ({ name, value }))
+
+    return { timeseries, byCategory, byProvenance }
+  }, [items])
+
   return (
     <div className="space-y-6 pb-20">
       {/* Header */}
@@ -934,6 +979,38 @@ function AttackTimelineContent() {
           </div>
         </div>
       )}
+
+      {/* Attack Timeline Visualizations */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <TrendAreaChart
+          title="Evidence Sequence Velocity"
+          subtitle="Chronological event density across investigation timeline"
+          data={timelineAnalytics.timeseries}
+          color="#38bdf8"
+        />
+        <DistributionDonutChart
+          title="Evidence Provenance Breakdown"
+          subtitle="Direct evidence vs correlated events vs alert triggers"
+          data={timelineAnalytics.byProvenance}
+          onSliceClick={(item) => {
+            if (item.name === 'Direct Evidence') setProvenanceFilter('DIRECT_EVIDENCE')
+            else if (item.name === 'Correlated') setProvenanceFilter('CORRELATED_EVENT')
+            else if (item.name === 'Alert Trigger') setProvenanceFilter('ALERT_CONTEXT')
+            else setProvenanceFilter('ALL')
+            setPage(1)
+          }}
+        />
+        <CategoryBarChart
+          title="Evidence by Category"
+          subtitle="Observed telemetry categories in current scope"
+          data={timelineAnalytics.byCategory}
+          color="#818cf8"
+          onBarClick={(item) => {
+            setEventCategory(item.name)
+            setPage(1)
+          }}
+        />
+      </div>
 
       {/* Filter Bar */}
       <Card>

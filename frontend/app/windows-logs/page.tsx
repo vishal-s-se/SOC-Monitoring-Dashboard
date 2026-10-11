@@ -12,9 +12,12 @@ import { FilterBar, FilterInput, FilterSelect } from '@/components/ui/FilterBar'
 import { Pagination } from '@/components/ui/Pagination'
 import { EventDetailsModal } from '@/components/ui/EventDetailsModal'
 
+import { TrendAreaChart, CategoryBarChart, DistributionDonutChart } from '@/components/ui/TabCharts'
+
 export default function WindowsLogsPage() {
   const [events, setEvents] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [stats, setStats] = useState<any>(null)
   const [error, setError] = useState("")
   const [total, setTotal] = useState(0)
 
@@ -46,16 +49,20 @@ export default function WindowsLogsPage() {
   const loadData = useCallback(async () => {
     try {
       setLoading(true)
-      const res = await api.get<any>('/events', {
-        page,
-        page_size: pageSize,
-        operating_system: 'windows',
-        severity: severity || undefined,
-        source_type: sourceType || undefined,
-        search: debouncedSearch || undefined
-      })
+      const [res, statsRes] = await Promise.all([
+        api.get<any>('/events', {
+          page,
+          page_size: pageSize,
+          operating_system: 'windows',
+          severity: severity || undefined,
+          source_type: sourceType || undefined,
+          search: debouncedSearch || undefined
+        }),
+        api.get<any>('/analytics/tab-stats?tab=logs&operating_system=windows&hours=24')
+      ])
       setEvents(res.items || [])
       setTotal(res.total || 0)
+      setStats(statsRes)
       setError("")
     } catch (err: any) {
       setError(err.message || "Failed to load Windows events")
@@ -100,6 +107,32 @@ export default function WindowsLogsPage() {
         title="Windows Logs"
         description="Search and filter normalized Windows event logs"
       />
+
+      {/* Visualizations: Channels, EventIDs, Volume */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <TrendAreaChart
+          title="Windows Event Volume (24h)"
+          subtitle="Hourly ingestion trajectory"
+          data={stats?.timeseries || []}
+          color="#0ea5e9"
+        />
+        <DistributionDonutChart
+          title="Events by Channel"
+          subtitle="Security, System, Application channels"
+          data={stats?.distribution1 || []}
+          onSliceClick={(item) => {
+            const raw = item.name.replace('windows_', '')
+            setSourceType(raw)
+            setPage(1)
+          }}
+        />
+        <CategoryBarChart
+          title="Top Event IDs / Types"
+          subtitle="Most frequent Windows event identifiers"
+          data={stats?.distribution2 || []}
+          color="#38bdf8"
+        />
+      </div>
 
       <FilterBar>
         <div className="flex-1">

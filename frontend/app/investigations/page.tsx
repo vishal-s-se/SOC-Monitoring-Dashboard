@@ -11,10 +11,12 @@ import { Pagination } from '@/components/ui/Pagination'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { SeverityBadge } from '@/components/ui/SeverityBadge'
 import { useRouter } from 'next/navigation'
+import { TrendAreaChart, CategoryBarChart, DistributionDonutChart } from '@/components/ui/TabCharts'
 
 export default function InvestigationsPage() {
   const router = useRouter()
   const [investigations, setInvestigations] = useState<any[]>([])
+  const [stats, setStats] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const [total, setTotal] = useState(0)
@@ -43,15 +45,19 @@ export default function InvestigationsPage() {
   const loadData = useCallback(async () => {
     try {
       setLoading(true)
-      const res = await api.get<any>('/investigations', {
-        page,
-        page_size: pageSize,
-        status: status || undefined,
-        severity: severity || undefined,
-        search: debouncedSearch || undefined
-      })
+      const [res, statsRes] = await Promise.all([
+        api.get<any>('/investigations', {
+          page,
+          page_size: pageSize,
+          status: status || undefined,
+          severity: severity || undefined,
+          search: debouncedSearch || undefined
+        }),
+        api.get<any>('/analytics/tab-stats?tab=investigations&hours=168')
+      ])
       setInvestigations(res.items || [])
       setTotal(res.total || 0)
+      setStats(statsRes)
       setError("")
     } catch (err: any) {
       setError(err.message || "Failed to load Investigations")
@@ -97,6 +103,35 @@ export default function InvestigationsPage() {
         >
           New Investigation
         </button>
+      </div>
+
+      {/* Investigation Analytics Visualizations */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <TrendAreaChart
+          title="Investigation Timeline (7 Days)"
+          subtitle="Case opening & creation frequency"
+          data={stats?.timeseries || []}
+          color="#8b5cf6"
+        />
+        <DistributionDonutChart
+          title="Case Severity Breakdown"
+          subtitle="Investigation severity profiles"
+          data={stats?.distribution1 || []}
+          onSliceClick={(item) => {
+            setSeverity(item.name)
+            setPage(1)
+          }}
+        />
+        <CategoryBarChart
+          title="Case Lifecycle Status"
+          subtitle="Open, in progress, resolved, closed"
+          data={stats?.distribution2 || []}
+          color="#6366f1"
+          onBarClick={(item) => {
+            setStatus(item.name)
+            setPage(1)
+          }}
+        />
       </div>
 
       <FilterBar>

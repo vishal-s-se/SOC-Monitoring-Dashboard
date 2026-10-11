@@ -12,6 +12,7 @@ import { SeverityBadge } from '@/components/ui/SeverityBadge'
 import { FilterBar, FilterInput, FilterSelect } from '@/components/ui/FilterBar'
 import { Pagination } from '@/components/ui/Pagination'
 import { EventDetailsModal } from '@/components/ui/EventDetailsModal'
+import { TrendAreaChart, CategoryBarChart, DistributionDonutChart } from '@/components/ui/TabCharts'
 
 function ProcessesContent() {
   const searchParams = useSearchParams()
@@ -19,6 +20,7 @@ function ProcessesContent() {
 
   const [events, setEvents] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [stats, setStats] = useState<any>(null)
   const [error, setError] = useState("")
   const [total, setTotal] = useState(0)
 
@@ -49,16 +51,20 @@ function ProcessesContent() {
   const loadData = useCallback(async () => {
     try {
       setLoading(true)
-      const res = await api.get<any>('/events', {
-        page,
-        page_size: pageSize,
-        event_category: 'process',
-        event_type: eventType || undefined,
-        operating_system: osParam || undefined,
-        search: debouncedSearch || undefined
-      })
+      const [res, statsRes] = await Promise.all([
+        api.get<any>('/events', {
+          page,
+          page_size: pageSize,
+          event_category: 'process',
+          event_type: eventType || undefined,
+          operating_system: osParam || undefined,
+          search: debouncedSearch || undefined
+        }),
+        api.get<any>(`/analytics/tab-stats?tab=processes&hours=24${osParam ? `&operating_system=${osParam}` : ''}`)
+      ])
       setEvents(res.items || [])
       setTotal(res.total || 0)
+      setStats(statsRes)
       setError("")
     } catch (err: any) {
       setError(err.message || "Failed to load Process events")
@@ -117,6 +123,27 @@ function ProcessesContent() {
             {osParam.toUpperCase()} Filtered
           </span>
         )}
+      </div>
+
+      {/* Process Telemetry Visualizations */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <TrendAreaChart
+          title="Process Execution Trend (24h)"
+          subtitle="Hourly process launches and executions"
+          data={stats?.timeseries || []}
+          color={osParam === 'linux' ? '#f59e0b' : '#38bdf8'}
+        />
+        <DistributionDonutChart
+          title="Observed Process Actions"
+          subtitle="Process creation and lifecycle actions"
+          data={stats?.distribution1 || []}
+        />
+        <CategoryBarChart
+          title="Top Executing Users"
+          subtitle="Identities triggering process activity"
+          data={stats?.distribution2 || []}
+          color="#a855f7"
+        />
       </div>
 
       <FilterBar>

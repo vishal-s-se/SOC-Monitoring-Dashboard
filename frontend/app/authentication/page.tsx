@@ -13,12 +13,15 @@ import { FilterBar, FilterInput, FilterSelect } from '@/components/ui/FilterBar'
 import { Pagination } from '@/components/ui/Pagination'
 import { EventDetailsModal } from '@/components/ui/EventDetailsModal'
 
+import { TrendAreaChart, CategoryBarChart, DistributionDonutChart } from '@/components/ui/TabCharts'
+
 function AuthenticationContent() {
   const searchParams = useSearchParams()
   const osParam = searchParams.get('os')?.toLowerCase() || ''
 
   const [events, setEvents] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [stats, setStats] = useState<any>(null)
   const [error, setError] = useState("")
   const [total, setTotal] = useState(0)
 
@@ -50,17 +53,21 @@ function AuthenticationContent() {
   const loadData = useCallback(async () => {
     try {
       setLoading(true)
-      const res = await api.get<any>('/events', {
-        page,
-        page_size: pageSize,
-        event_category: 'authentication',
-        event_type: eventType || undefined,
-        action: action || undefined,
-        operating_system: osParam || undefined,
-        search: debouncedSearch || undefined
-      })
+      const [res, statsRes] = await Promise.all([
+        api.get<any>('/events', {
+          page,
+          page_size: pageSize,
+          event_category: 'authentication',
+          event_type: eventType || undefined,
+          action: action || undefined,
+          operating_system: osParam || undefined,
+          search: debouncedSearch || undefined
+        }),
+        api.get<any>(`/analytics/tab-stats?tab=authentication&hours=24${osParam ? `&operating_system=${osParam}` : ''}`)
+      ])
       setEvents(res.items || [])
       setTotal(res.total || 0)
+      setStats(statsRes)
       setError("")
     } catch (err: any) {
       setError(err.message || "Failed to load Authentication events")
@@ -120,6 +127,31 @@ function AuthenticationContent() {
             {osParam.toUpperCase()} Filtered
           </span>
         )}
+      </div>
+
+      {/* Authentication Telemetry Visualizations */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <TrendAreaChart
+          title="Authentication Activity (24h)"
+          subtitle="Hourly login and session activity"
+          data={stats?.timeseries || []}
+          color={osParam === 'linux' ? '#f59e0b' : '#38bdf8'}
+        />
+        <DistributionDonutChart
+          title="Success vs Failed Logins"
+          subtitle="Authentication result distribution"
+          data={stats?.distribution1 || []}
+          onSliceClick={(item) => {
+            setAction(item.name)
+            setPage(1)
+          }}
+        />
+        <CategoryBarChart
+          title="Top Accounts / Usernames"
+          subtitle="Most active identities"
+          data={stats?.distribution2 || []}
+          color="#818cf8"
+        />
       </div>
 
       <FilterBar>

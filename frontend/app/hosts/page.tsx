@@ -8,17 +8,23 @@ import { PageHeader, LoadingState, ErrorState } from '@/components/ui/States'
 import { DataTable } from '@/components/ui/DataTable'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { TableSkeleton } from '@/components/ui/Skeleton'
+import { TrendAreaChart, CategoryBarChart, DistributionDonutChart } from '@/components/ui/TabCharts'
 
 export default function HostsPage() {
   const [hosts, setHosts] = useState<any[]>([])
+  const [stats, setStats] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
 
   const loadInitial = async () => {
     try {
       setLoading(true)
-      const res = await api.get<any>('/hosts')
+      const [res, statsRes] = await Promise.all([
+        api.get<any>('/hosts'),
+        api.get<any>('/analytics/tab-stats?tab=hosts&hours=24')
+      ])
       setHosts(res.items || [])
+      setStats(statsRes)
     } catch (err: any) {
       setError(err.message || "Failed to load hosts")
     } finally {
@@ -38,6 +44,26 @@ export default function HostsPage() {
         title="Hosts"
         description="Endpoint inventory"
       />
+
+      {/* Host Inventory Visualizations */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <DistributionDonutChart
+          title="Endpoint Status Profile"
+          subtitle="Real-time heartbeat & connectivity state"
+          data={stats?.distribution1 || []}
+        />
+        <CategoryBarChart
+          title="Telemetry Ingestion by Host"
+          subtitle="Top transmitting hosts (24h)"
+          data={stats?.distribution2 || []}
+          color="#38bdf8"
+        />
+        <DistributionDonutChart
+          title="Operating System Fleet"
+          subtitle="Inventory by OS distribution"
+          data={stats?.distribution3 || []}
+        />
+      </div>
 
       <Card>
         <CardContent className="p-0">

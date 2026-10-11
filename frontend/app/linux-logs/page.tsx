@@ -12,9 +12,12 @@ import { FilterBar, FilterInput, FilterSelect } from '@/components/ui/FilterBar'
 import { Pagination } from '@/components/ui/Pagination'
 import { EventDetailsModal } from '@/components/ui/EventDetailsModal'
 
+import { TrendAreaChart, CategoryBarChart, DistributionDonutChart } from '@/components/ui/TabCharts'
+
 export default function LinuxLogsPage() {
   const [events, setEvents] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [stats, setStats] = useState<any>(null)
   const [error, setError] = useState("")
   const [total, setTotal] = useState(0)
 
@@ -46,16 +49,20 @@ export default function LinuxLogsPage() {
   const loadData = useCallback(async () => {
     try {
       setLoading(true)
-      const res = await api.get<any>('/events', {
-        page,
-        page_size: pageSize,
-        operating_system: 'linux',
-        severity: severity || undefined,
-        source_type: sourceType || undefined,
-        search: debouncedSearch || undefined
-      })
+      const [res, statsRes] = await Promise.all([
+        api.get<any>('/events', {
+          page,
+          page_size: pageSize,
+          operating_system: 'linux',
+          severity: severity || undefined,
+          source_type: sourceType || undefined,
+          search: debouncedSearch || undefined
+        }),
+        api.get<any>('/analytics/tab-stats?tab=logs&operating_system=linux&hours=24')
+      ])
       setEvents(res.items || [])
       setTotal(res.total || 0)
+      setStats(statsRes)
       setError("")
     } catch (err: any) {
       setError(err.message || "Failed to load Linux events")
@@ -100,6 +107,27 @@ export default function LinuxLogsPage() {
         title="Linux Logs"
         description="Search and filter normalized Linux event logs"
       />
+
+      {/* Visualizations: Systemd Units, Priorities, Volume */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <TrendAreaChart
+          title="Linux Event Volume (24h)"
+          subtitle="Hourly journald & syslog ingestion trajectory"
+          data={stats?.timeseries || []}
+          color="#f59e0b"
+        />
+        <CategoryBarChart
+          title="Systemd Units & Daemons"
+          subtitle="Top active services (SYSLOG_IDENTIFIER)"
+          data={stats?.distribution2 || []}
+          color="#d97706"
+        />
+        <DistributionDonutChart
+          title="Log Priority Breakdown"
+          subtitle="Journald syslog priority classes"
+          data={stats?.distribution3 || []}
+        />
+      </div>
 
       <FilterBar>
         <div className="flex-1">

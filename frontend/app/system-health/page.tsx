@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { Card, CardHeader, CardContent } from "@/components/ui/Card";
 import { MetricCardSkeleton, ChartCardSkeleton } from "@/components/ui/Skeleton";
+import { CategoryBarChart, DistributionDonutChart } from "@/components/ui/TabCharts";
 
 export default function SystemHealthPage() {
     const [health, setHealth] = useState<any>(null);
@@ -89,6 +90,24 @@ export default function SystemHealthPage() {
                         </CardContent>
                     </Card>
                 ))}
+            </div>
+
+            {/* Visual observability for measured latencies */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                <CategoryBarChart
+                    title="Measured Service Latencies (ms)"
+                    subtitle="Real measured response times per infrastructure component"
+                    data={health.services.map((s: any) => ({ name: s.service.toUpperCase(), value: Math.round(s.latency_ms * 100) / 100 }))}
+                    color="#10b981"
+                />
+                <DistributionDonutChart
+                    title="Component Health State"
+                    subtitle="Operational status distribution across system services"
+                    data={[
+                        { name: 'HEALTHY', value: health.services.filter((s: any) => s.status === 'HEALTHY').length },
+                        { name: 'DEGRADED', value: health.services.filter((s: any) => s.status !== 'HEALTHY').length }
+                    ]}
+                />
             </div>
 
             <h2 className="text-xl font-bold text-slate-200 mt-8 mb-4">Queues</h2>

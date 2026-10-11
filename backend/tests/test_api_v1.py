@@ -2447,3 +2447,24 @@ async def test_metrics_endpoints_phase_8c(client: AsyncClient, db: AsyncSession)
     assert res_det.status_code == 200
     data_det = res_det.json()
     assert "rule_matches" in data_det
+
+
+@pytest.mark.asyncio
+async def test_tab_analytics_endpoints(client: AsyncClient, db: AsyncSession):
+    # Test GET /analytics/mitre
+    res_m = await client.get("/api/v1/analytics/mitre")
+    assert res_m.status_code == 200
+    data_m = res_m.json()
+    assert "mapped_events" in data_m
+    assert "by_tactic" in data_m
+
+    # Test GET /analytics/tab-stats for multiple tabs
+    for tab in ["live-events", "logs", "authentication", "network", "firewall", "processes", "history", "unified", "hosts", "alerts", "investigations"]:
+        res = await client.get(f"/api/v1/analytics/tab-stats?tab={tab}&operating_system=windows&hours=24")
+        assert res.status_code == 200
+        data = res.json()
+        assert "total" in data
+        assert "timeseries" in data
+        assert "distribution1" in data
+        assert "distribution2" in data
+

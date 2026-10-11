@@ -10,9 +10,11 @@ import { SeverityBadge } from '@/components/ui/SeverityBadge'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { AddToInvestigationModal } from '@/components/ui/AddToInvestigationModal'
 import { TableSkeleton } from '@/components/ui/Skeleton'
+import { TrendAreaChart, CategoryBarChart, DistributionDonutChart } from '@/components/ui/TabCharts'
 
 export default function AlertsPage() {
   const [alerts, setAlerts] = useState<any[]>([])
+  const [stats, setStats] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
 
@@ -21,8 +23,12 @@ export default function AlertsPage() {
   const loadInitial = async () => {
     try {
       setLoading(true)
-      const res = await api.get<any>('/alerts?limit=50')
+      const [res, statsRes] = await Promise.all([
+        api.get<any>('/alerts?limit=50'),
+        api.get<any>('/analytics/tab-stats?tab=alerts&hours=168')
+      ])
       setAlerts(res.items || [])
+      setStats(statsRes)
     } catch (err: any) {
       setError(err.message || "Failed to load alerts")
     } finally {
@@ -56,9 +62,30 @@ export default function AlertsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Alerts"
+        title="Alerts & Detections"
         description="Security detections requiring attention"
       />
+
+      {/* Alert Analytics Visualizations */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <TrendAreaChart
+          title="Alert Activity (7 Days)"
+          subtitle="Hourly detection frequency"
+          data={stats?.timeseries || []}
+          color="#ef4444"
+        />
+        <DistributionDonutChart
+          title="Alert Severity Breakdown"
+          subtitle="Distribution by detection severity"
+          data={stats?.distribution1 || []}
+        />
+        <CategoryBarChart
+          title="Top Detection Rules"
+          subtitle="Rules triggering alerts"
+          data={stats?.distribution3 || []}
+          color="#f97316"
+        />
+      </div>
 
       <Card>
         <CardContent className="p-0">

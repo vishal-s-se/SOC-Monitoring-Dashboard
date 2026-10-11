@@ -129,3 +129,16 @@ class MetricMitreResponse(BaseModel):
     mapped_events: int
     mapped_alerts: int
     by_tactic: Dict[str, int]
+
+class MetricDistributionItem(BaseModel):
+    name: str
+    value: int
+
+class TabAnalyticsResponse(BaseModel):
+    total: int
+    timeseries: List[MetricTimeSeriesPoint]
+    distribution1: List[MetricDistributionItem]
+    distribution2: List[MetricDistributionItem]
+    distribution3: Optional[List[MetricDistributionItem]] = None
+    distribution4: Optional[List[MetricDistributionItem]] = None
+
