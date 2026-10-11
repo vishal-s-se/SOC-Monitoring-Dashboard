@@ -40,78 +40,111 @@ export function HelpContent({
       ? allFlattenedTopics[currentIndex + 1]
       : null;
 
-  // Simple, robust markdown-like line renderer
+  // Inline formatting: **bold**, `code`, *italic*
+  const renderInlineMarkdown = (text: string) => {
+    const parts = text.split(/(\*\*.*?\*\*|`.*?`|\*.*?\*)/g);
+    return parts.map((part, i) => {
+      if (part.startsWith("**") && part.endsWith("**")) {
+        return (
+          <strong key={i} className="text-gray-100 font-semibold">
+            {part.slice(2, -2)}
+          </strong>
+        );
+      }
+      if (part.startsWith("*") && part.endsWith("*") && !part.startsWith("**")) {
+        return (
+          <em key={i} className="text-gray-200 italic">
+            {part.slice(1, -1)}
+          </em>
+        );
+      }
+      if (part.startsWith("`") && part.endsWith("`")) {
+        return (
+          <code
+            key={i}
+            className="bg-gray-800/80 text-blue-300 px-1.5 py-0.5 rounded text-[11px] font-mono border border-gray-700/60"
+          >
+            {part.slice(1, -1)}
+          </code>
+        );
+      }
+      return part;
+    });
+  };
+
+  // Simple, robust markdown block renderer
   const renderFormattedContent = (rawText: string) => {
     const lines = rawText.trim().split("\n");
     const elements: React.ReactNode[] = [];
-    let inCodeBlock = false;
-    let codeBuffer: string[] = [];
-    let codeLang = "";
+    let i = 0;
+    const n = lines.length;
 
-    lines.forEach((line, idx) => {
-      // Code block start / end
-      if (line.trim().startsWith("```")) {
-        if (inCodeBlock) {
-          const codeContent = codeBuffer.join("\n");
-          elements.push(
-            <div
-              key={`code-${idx}`}
-              className="my-3 rounded-lg bg-gray-950 border border-gray-800 overflow-hidden text-xs shadow-inner"
-            >
-              <div className="bg-gray-900/90 px-3 py-1.5 border-b border-gray-800 text-[11px] font-mono text-gray-400 flex items-center justify-between">
-                <span>{codeLang || "bash / powershell"}</span>
-                <CopyButton text={codeContent} label="Copy snippet" />
-              </div>
-              <pre className="p-3 text-emerald-400 font-mono text-xs overflow-x-auto select-text leading-relaxed">
-                <code>{codeContent}</code>
-              </pre>
-            </div>
-          );
-          codeBuffer = [];
-          inCodeBlock = false;
-          codeLang = "";
-        } else {
-          inCodeBlock = true;
-          codeLang = line.trim().replace("```", "").trim();
-        }
-        return;
-      }
-
-      if (inCodeBlock) {
-        codeBuffer.push(line);
-        return;
-      }
-
+    while (i < n) {
+      const line = lines[i];
       const trimmed = line.trim();
 
-      // Heading 3
+      // 1. Code block
+      if (trimmed.startsWith("```")) {
+        const codeLang = trimmed.replace("```", "").trim();
+        const codeBuffer: string[] = [];
+        i++;
+        while (i < n && !lines[i].trim().startsWith("```")) {
+          codeBuffer.push(lines[i]);
+          i++;
+        }
+        i++; // skip closing ```
+        const codeContent = codeBuffer.join("\n");
+        elements.push(
+          <div
+            key={`code-${i}`}
+            className="my-3 rounded-lg bg-gray-950 border border-gray-800 overflow-hidden text-xs shadow-inner"
+          >
+            <div className="bg-gray-900/90 px-3 py-1.5 border-b border-gray-800 text-[11px] font-mono text-gray-400 flex items-center justify-between">
+              <span>{codeLang || "bash / powershell"}</span>
+              <CopyButton text={codeContent} label="Copy snippet" />
+            </div>
+            <pre className="p-3 text-emerald-400 font-mono text-xs overflow-x-auto select-text leading-relaxed">
+              <code>{codeContent}</code>
+            </pre>
+          </div>
+        );
+        continue;
+      }
+
+      // 2. Headings
       if (trimmed.startsWith("### ")) {
         elements.push(
           <h3
-            key={`h3-${idx}`}
+            key={`h3-${i}`}
             className="text-base sm:text-lg font-bold text-gray-100 mt-6 mb-2 border-b border-gray-800/80 pb-1.5"
           >
             {trimmed.replace("### ", "")}
           </h3>
         );
-        return;
+        i++;
+        continue;
       }
 
-      // Heading 4
       if (trimmed.startsWith("#### ")) {
         elements.push(
           <h4
-            key={`h4-${idx}`}
+            key={`h4-${i}`}
             className="text-sm sm:text-base font-semibold text-blue-400 mt-4 mb-1.5"
           >
             {trimmed.replace("#### ", "")}
           </h4>
         );
-        return;
+        i++;
+        continue;
       }
 
-      // Callout box (> [!NOTE], > [!WARNING], > [!IMPORTANT], > [!TIP])
-      if (trimmed.startsWith("> [!NOTE]") || trimmed.startsWith("> [!IMPORTANT]") || trimmed.startsWith("> [!WARNING]") || trimmed.startsWith("> [!TIP]")) {
+      // 3. Callout box (> [!NOTE], > [!WARNING], > [!IMPORTANT], > [!TIP])
+      if (
+        trimmed.startsWith("> [!NOTE]") ||
+        trimmed.startsWith("> [!IMPORTANT]") ||
+        trimmed.startsWith("> [!WARNING]") ||
+        trimmed.startsWith("> [!TIP]")
+      ) {
         const type = trimmed.includes("NOTE")
           ? "NOTE"
           : trimmed.includes("WARNING")
@@ -131,7 +164,7 @@ export function HelpContent({
 
         elements.push(
           <div
-            key={`callout-${idx}`}
+            key={`callout-${i}`}
             className={`my-3 p-3 rounded-lg border text-xs leading-relaxed ${bg}`}
           >
             <div className="font-bold uppercase tracking-wider text-[10px] mb-1">
@@ -140,83 +173,205 @@ export function HelpContent({
             {trimmed.replace(/^> \[[!A-Z]+\]\s*/, "")}
           </div>
         );
-        return;
+        i++;
+        continue;
       }
 
+      // 4. Blockquote
       if (trimmed.startsWith("> ")) {
         elements.push(
           <blockquote
-            key={`quote-${idx}`}
+            key={`quote-${i}`}
             className="my-2 pl-3 border-l-2 border-gray-700 text-xs text-gray-400 italic"
           >
             {trimmed.replace(/^> /, "")}
           </blockquote>
         );
-        return;
+        i++;
+        continue;
       }
 
-      // List item
+      // 5. Markdown Table
+      if (trimmed.startsWith("|") && trimmed.endsWith("|")) {
+        const tableLines: string[] = [];
+        const startIdx = i;
+        while (i < n && lines[i].trim().startsWith("|") && lines[i].trim().endsWith("|")) {
+          tableLines.push(lines[i].trim());
+          i++;
+        }
+        if (tableLines.length >= 2) {
+          const headerLine = tableLines[0];
+          const headers = headerLine
+            .split("|")
+            .map((h) => h.trim())
+            .filter(Boolean);
+          const rowLines = tableLines.slice(2);
+
+          elements.push(
+            <div
+              key={`table-${startIdx}`}
+              className="my-4 overflow-x-auto rounded-lg border border-gray-800 bg-gray-950/60 shadow-inner"
+            >
+              <table className="w-full text-xs text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-gray-800 bg-gray-900/80">
+                    {headers.map((h, hIdx) => (
+                      <th key={hIdx} className="px-3.5 py-2 font-bold text-gray-200">
+                        {renderInlineMarkdown(h)}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-800/60">
+                  {rowLines.map((row, rIdx) => {
+                    const cells = row
+                      .split("|")
+                      .map((c) => c.trim())
+                      .filter((_, idx, arr) => idx > 0 && idx < arr.length - 1);
+                    return (
+                      <tr key={rIdx} className="hover:bg-gray-900/30">
+                        {cells.map((cell, cIdx) => (
+                          <td key={cIdx} className="px-3.5 py-2 text-gray-300">
+                            {renderInlineMarkdown(cell)}
+                          </td>
+                        ))}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          );
+        }
+        continue;
+      }
+
+      // 6. Ordered List
+      const olMatch = trimmed.match(/^(\d+)\.\s+(.*)/);
+      if (olMatch) {
+        const startNum = parseInt(olMatch[1], 10) || 1;
+        const olItems: { text: string; subItems: string[] }[] = [];
+        const startIdx = i;
+
+        while (i < n) {
+          const currTrimmed = lines[i].trim();
+          const itemMatch = currTrimmed.match(/^\d+\.\s+(.*)/);
+          if (itemMatch) {
+            const mainText = itemMatch[1];
+            const subItems: string[] = [];
+            i++;
+            // Check for indented sub-bullets
+            while (i < n) {
+              const subTrimmed = lines[i].trim();
+              if (
+                (lines[i].startsWith("   ") || lines[i].startsWith("\t") || lines[i].startsWith("  ")) &&
+                /^[-*]\s+(.*)/.test(subTrimmed)
+              ) {
+                const subMatch = subTrimmed.match(/^[-*]\s+(.*)/);
+                if (subMatch) subItems.push(subMatch[1]);
+                i++;
+              } else {
+                break;
+              }
+            }
+            olItems.push({ text: mainText, subItems });
+          } else if (currTrimmed === "") {
+            // Peek ahead: if next non-empty line is another numbered item, allow loose spacing
+            let peek = i + 1;
+            while (peek < n && lines[peek].trim() === "") {
+              peek++;
+            }
+            if (peek < n && /^\d+\.\s+/.test(lines[peek].trim())) {
+              i = peek;
+            } else {
+              break;
+            }
+          } else {
+            break;
+          }
+        }
+
+        elements.push(
+          <ol
+            key={`ol-${startIdx}`}
+            start={startNum}
+            className="list-decimal pl-5 space-y-2 my-2.5"
+          >
+            {olItems.map((item, itemIdx) => (
+              <li
+                key={`oli-${itemIdx}`}
+                className="text-xs sm:text-sm text-gray-300 leading-relaxed pl-1"
+              >
+                <div>{renderInlineMarkdown(item.text)}</div>
+                {item.subItems.length > 0 && (
+                  <ul className="list-disc pl-5 space-y-1 mt-1 text-gray-400">
+                    {item.subItems.map((sub, sIdx) => (
+                      <li key={`sub-${sIdx}`} className="text-xs">
+                        {renderInlineMarkdown(sub)}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </li>
+            ))}
+          </ol>
+        );
+        continue;
+      }
+
+      // 7. Unordered List
       if (trimmed.startsWith("- ") || trimmed.startsWith("* ")) {
-        const text = trimmed.substring(2);
+        const ulItems: string[] = [];
+        const startIdx = i;
+
+        while (i < n) {
+          const currTrimmed = lines[i].trim();
+          if (currTrimmed.startsWith("- ") || currTrimmed.startsWith("* ")) {
+            ulItems.push(currTrimmed.substring(2));
+            i++;
+          } else {
+            break;
+          }
+        }
+
         elements.push(
-          <li key={`li-${idx}`} className="text-xs sm:text-sm text-gray-300 ml-4 list-disc my-1">
-            {renderInlineMarkdown(text)}
-          </li>
+          <ul
+            key={`ul-${startIdx}`}
+            className="list-disc pl-5 space-y-1.5 my-2"
+          >
+            {ulItems.map((item, itemIdx) => (
+              <li
+                key={`uli-${itemIdx}`}
+                className="text-xs sm:text-sm text-gray-300 leading-relaxed pl-1"
+              >
+                {renderInlineMarkdown(item)}
+              </li>
+            ))}
+          </ul>
         );
-        return;
+        continue;
       }
 
-      // Numbered list item
-      if (/^\d+\.\s/.test(trimmed)) {
-        const text = trimmed.replace(/^\d+\.\s/, "");
-        elements.push(
-          <li key={`nli-${idx}`} className="text-xs sm:text-sm text-gray-300 ml-4 list-decimal my-1">
-            {renderInlineMarkdown(text)}
-          </li>
-        );
-        return;
-      }
-
-      // Blank line
+      // 8. Blank line
       if (trimmed === "") {
-        elements.push(<div key={`blank-${idx}`} className="h-2" />);
-        return;
+        elements.push(<div key={`blank-${i}`} className="h-2" />);
+        i++;
+        continue;
       }
 
-      // Regular paragraph
+      // 9. Regular paragraph
       elements.push(
-        <p key={`p-${idx}`} className="text-xs sm:text-sm text-gray-300 leading-relaxed my-1.5">
+        <p
+          key={`p-${i}`}
+          className="text-xs sm:text-sm text-gray-300 leading-relaxed my-1.5"
+        >
           {renderInlineMarkdown(line)}
         </p>
       );
-    });
+      i++;
+    }
 
     return elements;
-  };
-
-  // Inline formatting: **bold** and `code`
-  const renderInlineMarkdown = (text: string) => {
-    const parts = text.split(/(\*\*.*?\*\*|`.*?`)/g);
-    return parts.map((part, i) => {
-      if (part.startsWith("**") && part.endsWith("**")) {
-        return (
-          <strong key={i} className="text-gray-100 font-semibold">
-            {part.slice(2, -2)}
-          </strong>
-        );
-      }
-      if (part.startsWith("`") && part.endsWith("`")) {
-        return (
-          <code
-            key={i}
-            className="bg-gray-800/80 text-blue-300 px-1.5 py-0.5 rounded text-[11px] font-mono border border-gray-700/60"
-          >
-            {part.slice(1, -1)}
-          </code>
-        );
-      }
-      return part;
-    });
   };
 
   return (
