@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { api } from '@/lib/api'
 import { Card, CardContent } from '@/components/ui/Card'
-import { PageHeader, LoadingState, ErrorState } from '@/components/ui/States'
+import { PageHeader, ErrorState } from '@/components/ui/States'
+import { TableSkeleton } from '@/components/ui/Skeleton'
 import { DataTable } from '@/components/ui/DataTable'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { AddEndpointModal } from '@/components/ui/AddEndpointModal'
@@ -241,7 +242,6 @@ export default function AgentsPage() {
     return true
   })
 
-  if (loading) return <LoadingState message="Loading agents..." />
   if (error) return <ErrorState message={error} retry={loadAgents} />
 
   return (
@@ -383,60 +383,64 @@ export default function AgentsPage() {
 
       <Card>
         <CardContent className="p-0">
-          <DataTable
-            data={filteredAgents}
-            keyExtractor={(r) => r.agent_id}
-            columns={[
-              { key: 'status', title: 'Status', render: (r) => <StatusBadge status={r.status} /> },
-              { key: 'hostname', title: 'Hostname', render: (r) => (
-                r.hostname ? (
-                  <Link
-                    href={`/host-investigation?host=${encodeURIComponent(r.hostname)}`}
-                    className="font-medium text-blue-400 hover:text-blue-300 hover:underline"
-                  >
-                    {r.hostname}
-                  </Link>
-                ) : <span className="text-gray-500">-</span>
-              )},
-              { key: 'ip_address', title: 'IP Address', render: (r) => (
-                r.ip_address ? (
-                  <Link
-                    href={`/ip-investigation?ip=${encodeURIComponent(r.ip_address)}`}
-                    className="text-blue-400 hover:text-blue-300 hover:underline font-mono"
-                  >
-                    {r.ip_address}
-                  </Link>
-                ) : <span className="text-gray-500">-</span>
-              )},
-              { key: 'operating_system', title: 'OS', render: (r) => <span className="capitalize">{r.operating_system || '-'}</span> },
-              { key: 'agent_version', title: 'Version', render: (r) => r.agent_version || '-' },
-              {
-                key: 'last_heartbeat',
-                title: 'Last Heartbeat',
-                render: (r) => r.last_heartbeat ? new Date(r.last_heartbeat).toLocaleString() : <span className="text-gray-500">Never</span>
-              },
-              { key: 'actions', title: 'Actions', render: (r) => (
-                <div className="flex items-center space-x-2">
-                  {r.hostname && (
+          {loading ? (
+            <TableSkeleton rows={8} columns={6} />
+          ) : (
+            <DataTable
+              data={filteredAgents}
+              keyExtractor={(r) => r.agent_id}
+              columns={[
+                { key: 'status', title: 'Status', render: (r) => <StatusBadge status={r.status} /> },
+                { key: 'hostname', title: 'Hostname', render: (r) => (
+                  r.hostname ? (
                     <Link
                       href={`/host-investigation?host=${encodeURIComponent(r.hostname)}`}
-                      className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 rounded transition-colors inline-block font-medium"
+                      className="font-medium text-blue-400 hover:text-blue-300 hover:underline"
                     >
-                      Investigate
+                      {r.hostname}
                     </Link>
-                  )}
-                  {r.status !== 'RETIRED' && (
-                    <button
-                      onClick={() => setRetireTarget(r)}
-                      className="text-xs bg-red-900/40 hover:bg-red-700 border border-red-700/50 text-red-400 hover:text-white px-2.5 py-1 rounded transition-colors"
+                  ) : <span className="text-gray-500">-</span>
+                )},
+                { key: 'ip_address', title: 'IP Address', render: (r) => (
+                  r.ip_address ? (
+                    <Link
+                      href={`/ip-investigation?ip=${encodeURIComponent(r.ip_address)}`}
+                      className="text-blue-400 hover:text-blue-300 hover:underline font-mono"
                     >
-                      Retire
-                    </button>
-                  )}
-                </div>
-              )},
-            ]}
-          />
+                      {r.ip_address}
+                    </Link>
+                  ) : <span className="text-gray-500">-</span>
+                )},
+                { key: 'operating_system', title: 'OS', render: (r) => <span className="capitalize">{r.operating_system || '-'}</span> },
+                { key: 'agent_version', title: 'Version', render: (r) => r.agent_version || '-' },
+                {
+                  key: 'last_heartbeat',
+                  title: 'Last Heartbeat',
+                  render: (r) => r.last_heartbeat ? new Date(r.last_heartbeat).toLocaleString() : <span className="text-gray-500">Never</span>
+                },
+                { key: 'actions', title: 'Actions', render: (r) => (
+                  <div className="flex items-center space-x-2">
+                    {r.hostname && (
+                      <Link
+                        href={`/host-investigation?host=${encodeURIComponent(r.hostname)}`}
+                        className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 rounded transition-colors inline-block font-medium"
+                      >
+                        Investigate
+                      </Link>
+                    )}
+                    {r.status !== 'RETIRED' && (
+                      <button
+                        onClick={() => setRetireTarget(r)}
+                        className="text-xs bg-red-900/40 hover:bg-red-700 border border-red-700/50 text-red-400 hover:text-white px-2.5 py-1 rounded transition-colors"
+                      >
+                        Retire
+                      </button>
+                    )}
+                  </div>
+                )},
+              ]}
+            />
+          )}
         </CardContent>
       </Card>
     </div>

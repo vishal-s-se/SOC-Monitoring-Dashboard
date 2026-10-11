@@ -4,7 +4,8 @@ import { useEffect, useState, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { api } from '@/lib/api'
 import { Card, CardContent } from '@/components/ui/Card'
-import { PageHeader, LoadingState, ErrorState } from '@/components/ui/States'
+import { PageHeader, ErrorState } from '@/components/ui/States'
+import { TableSkeleton } from '@/components/ui/Skeleton'
 import { DataTable } from '@/components/ui/DataTable'
 import { useWebSocket } from '@/hooks/useWebSocket'
 import { SeverityBadge } from '@/components/ui/SeverityBadge'
@@ -61,7 +62,6 @@ function LiveEventsContent() {
     }
   }, [lastMessage, isLive, osParam])
 
-  if (loading) return <LoadingState message="Loading live events..." />
   if (error) return <ErrorState message={error} retry={loadInitial} />
 
   const displayTitle = osParam
@@ -104,28 +104,32 @@ function LiveEventsContent() {
 
       <Card>
         <CardContent className="p-0">
-          <DataTable
-            data={events}
-            keyExtractor={(r) => r.event_id || String(r.id)}
-            onRowClick={(r) => setSelectedEvent(r)}
-            columns={[
-              { key: 'timestamp', title: 'Time', render: (r) => new Date(r.timestamp).toLocaleTimeString() },
-              { key: 'severity', title: 'Sev', render: (r) => <SeverityBadge severity={r.severity || 'INFO'} /> },
-              { key: 'hostname', title: 'Host', render: (r) => <span className="font-mono text-xs">{r.hostname}</span> },
-              {
-                key: 'os',
-                title: 'OS',
-                render: (r) => (
-                  <span className="text-xs text-gray-400">
-                    {r.operating_system || '-'}
-                  </span>
-                )
-              },
-              { key: 'source', title: 'Source', render: (r) => <span className="text-xs">{r.source || r.source_type || '-'}</span> },
-              { key: 'event_type', title: 'Type', render: (r) => <span className="text-xs text-gray-300 font-mono">{r.event_type || r.action || '-'}</span> },
-              { key: 'username', title: 'User', render: (r) => <span className="text-xs text-gray-400">{r.username || '-'}</span> },
-            ]}
-          />
+          {loading ? (
+            <TableSkeleton rows={10} columns={7} />
+          ) : (
+            <DataTable
+              data={events}
+              keyExtractor={(r) => r.event_id || String(r.id)}
+              onRowClick={(r) => setSelectedEvent(r)}
+              columns={[
+                { key: 'timestamp', title: 'Time', render: (r) => new Date(r.timestamp).toLocaleTimeString() },
+                { key: 'severity', title: 'Sev', render: (r) => <SeverityBadge severity={r.severity || 'INFO'} /> },
+                { key: 'hostname', title: 'Host', render: (r) => <span className="font-mono text-xs">{r.hostname}</span> },
+                {
+                  key: 'os',
+                  title: 'OS',
+                  render: (r) => (
+                    <span className="text-xs text-gray-400">
+                      {r.operating_system || '-'}
+                    </span>
+                  )
+                },
+                { key: 'source', title: 'Source', render: (r) => <span className="text-xs">{r.source || r.source_type || '-'}</span> },
+                { key: 'event_type', title: 'Type', render: (r) => <span className="text-xs text-gray-300 font-mono">{r.event_type || r.action || '-'}</span> },
+                { key: 'username', title: 'User', render: (r) => <span className="text-xs text-gray-400">{r.username || '-'}</span> },
+              ]}
+            />
+          )}
         </CardContent>
       </Card>
 
@@ -141,7 +145,12 @@ function LiveEventsContent() {
 
 export default function LiveEventsPage() {
   return (
-    <Suspense fallback={<LoadingState message="Loading live stream..." />}>
+    <Suspense fallback={
+      <div className="space-y-6">
+        <PageHeader title="Live Events" description="Real-time normalized event stream across all endpoints" />
+        <Card><CardContent className="p-0"><TableSkeleton rows={10} columns={7} /></CardContent></Card>
+      </div>
+    }>
       <LiveEventsContent />
     </Suspense>
   )

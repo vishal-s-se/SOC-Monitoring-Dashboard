@@ -5,7 +5,8 @@ import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { api } from '@/lib/api'
 import { Card, CardContent } from '@/components/ui/Card'
-import { PageHeader, LoadingState, ErrorState, EmptyState } from '@/components/ui/States'
+import { PageHeader, ErrorState, EmptyState } from '@/components/ui/States'
+import { TableSkeleton } from '@/components/ui/Skeleton'
 import { DataTable } from '@/components/ui/DataTable'
 import { useWebSocket } from '@/hooks/useWebSocket'
 import { SeverityBadge } from '@/components/ui/SeverityBadge'
@@ -163,7 +164,11 @@ function NetworkContent() {
       {error ? (
         <ErrorState message={error} retry={loadData} />
       ) : loading && events.length === 0 ? (
-        <LoadingState message="Loading Network events..." />
+        <Card>
+          <CardContent className="p-0 overflow-x-auto">
+            <TableSkeleton rows={10} columns={8} />
+          </CardContent>
+        </Card>
       ) : events.length === 0 ? (
         <EmptyState
           title="No network events found"
@@ -234,7 +239,12 @@ function NetworkContent() {
 
 export default function NetworkPage() {
   return (
-    <Suspense fallback={<LoadingState message="Loading Network Events..." />}>
+    <Suspense fallback={
+      <div className="space-y-6">
+        <PageHeader title="Network Telemetry" description="Active connections, socket events, and remote endpoints" />
+        <Card><CardContent className="p-0"><TableSkeleton rows={10} columns={8} /></CardContent></Card>
+      </div>
+    }>
       <NetworkContent />
     </Suspense>
   )

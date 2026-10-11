@@ -3,7 +3,8 @@
 import { useEffect, useState, useCallback, Suspense } from 'react'
 import { api } from '@/lib/api'
 import { Card, CardContent } from '@/components/ui/Card'
-import { PageHeader, LoadingState, ErrorState, EmptyState } from '@/components/ui/States'
+import { PageHeader, ErrorState, EmptyState } from '@/components/ui/States'
+import { TableSkeleton } from '@/components/ui/Skeleton'
 import { DataTable } from '@/components/ui/DataTable'
 import { SeverityBadge } from '@/components/ui/SeverityBadge'
 import { FilterBar, FilterInput, FilterSelect } from '@/components/ui/FilterBar'
@@ -141,7 +142,7 @@ function LinuxHistoryContent() {
       <Card>
         <CardContent className="p-0">
           {loading ? (
-            <LoadingState message="Loading Linux historical telemetry..." />
+            <TableSkeleton rows={10} columns={6} />
           ) : error ? (
             <ErrorState message={error} retry={loadData} />
           ) : events.length === 0 ? (
@@ -232,7 +233,12 @@ function LinuxHistoryContent() {
 
 export default function LinuxHistoryPage() {
   return (
-    <Suspense fallback={<LoadingState message="Loading Linux History..." />}>
+    <Suspense fallback={
+      <div className="space-y-6">
+        <PageHeader title="Linux Event History" description="Historical archive of Linux systemd journald and syslog events" />
+        <Card><CardContent className="p-0"><TableSkeleton rows={10} columns={6} /></CardContent></Card>
+      </div>
+    }>
       <LinuxHistoryContent />
     </Suspense>
   )

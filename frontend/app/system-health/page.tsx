@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { Card, CardHeader, CardContent } from "@/components/ui/Card";
+import { MetricCardSkeleton, ChartCardSkeleton } from "@/components/ui/Skeleton";
 
 export default function SystemHealthPage() {
     const [health, setHealth] = useState<any>(null);
@@ -25,22 +26,36 @@ export default function SystemHealthPage() {
         return () => clearInterval(interval);
     }, []);
 
-    if (loading) return <div className="p-8 text-slate-400">Loading system health...</div>;
-    if (!health) return <div className="p-8 text-red-400">System health unavailable</div>;
+    if (!loading && !health) return <div className="p-8 text-red-400">System health unavailable</div>;
 
     return (
         <div className="p-8 space-y-6">
             <h1 className="text-2xl font-bold text-slate-100 mb-6">System Health & Observability</h1>
             
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-                <Card>
-                    <CardHeader title="Overall Status" />
-                    <CardContent>
-                        <div className={`text-2xl font-bold ${health.overall_status === 'HEALTHY' ? 'text-green-500' : 'text-amber-500'}`}>
-                            {health.overall_status}
-                        </div>
-                    </CardContent>
-                </Card>
+            {loading ? (
+                <>
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                        {Array.from({ length: 4 }).map((_, i) => (
+                            <MetricCardSkeleton key={i} />
+                        ))}
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {Array.from({ length: 3 }).map((_, i) => (
+                            <ChartCardSkeleton key={i} height="h-24" />
+                        ))}
+                    </div>
+                </>
+            ) : (
+                <>
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                        <Card>
+                            <CardHeader title="Overall Status" />
+                            <CardContent>
+                                <div className={`text-2xl font-bold ${health.overall_status === 'HEALTHY' ? 'text-green-500' : 'text-amber-500'}`}>
+                                    {health.overall_status}
+                                </div>
+                            </CardContent>
+                        </Card>
                 <Card>
                     <CardHeader title="Active Agents" />
                     <CardContent>
@@ -91,6 +106,8 @@ export default function SystemHealthPage() {
                     </Card>
                 ))}
             </div>
+            </>
+            )}
         </div>
     );
 }

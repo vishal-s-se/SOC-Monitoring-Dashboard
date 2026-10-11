@@ -35,12 +35,12 @@ export default function TopBar() {
       }
     };
     checkApi();
-    interval = setInterval(checkApi, 15000);
+    interval = setInterval(checkApi, 30000);
     return () => {
       isCancelled = true;
       if (interval) clearInterval(interval);
     };
-  }, [pathname]);
+  }, []);
 
   if (pathname === '/login') return null;
 

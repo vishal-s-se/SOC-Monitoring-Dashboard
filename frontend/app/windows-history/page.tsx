@@ -3,7 +3,8 @@
 import { useEffect, useState, useCallback, Suspense } from 'react'
 import { api } from '@/lib/api'
 import { Card, CardContent } from '@/components/ui/Card'
-import { PageHeader, LoadingState, ErrorState, EmptyState } from '@/components/ui/States'
+import { PageHeader, ErrorState, EmptyState } from '@/components/ui/States'
+import { TableSkeleton } from '@/components/ui/Skeleton'
 import { DataTable } from '@/components/ui/DataTable'
 import { SeverityBadge } from '@/components/ui/SeverityBadge'
 import { FilterBar, FilterInput, FilterSelect } from '@/components/ui/FilterBar'
@@ -158,7 +159,7 @@ function WindowsHistoryContent() {
       <Card>
         <CardContent className="p-0">
           {loading ? (
-            <LoadingState message="Loading Windows historical telemetry..." />
+            <TableSkeleton rows={10} columns={7} />
           ) : error ? (
             <ErrorState message={error} retry={loadData} />
           ) : events.length === 0 ? (
@@ -258,7 +259,12 @@ function WindowsHistoryContent() {
 
 export default function WindowsHistoryPage() {
   return (
-    <Suspense fallback={<LoadingState message="Loading Windows History..." />}>
+    <Suspense fallback={
+      <div className="space-y-6">
+        <PageHeader title="Windows Event History" description="Historical archive of Windows Security, System, and Sysmon events" />
+        <Card><CardContent className="p-0"><TableSkeleton rows={10} columns={7} /></CardContent></Card>
+      </div>
+    }>
       <WindowsHistoryContent />
     </Suspense>
   )

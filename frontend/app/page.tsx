@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react'
 import { api } from '@/lib/api'
 import { Card, CardHeader, CardContent } from '@/components/ui/Card'
-import { PageHeader, LoadingState, ErrorState } from '@/components/ui/States'
+import { PageHeader, ErrorState } from '@/components/ui/States'
+import { MetricCardSkeleton, ChartCardSkeleton, TableSkeleton } from '@/components/ui/Skeleton'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { SeverityBadge } from '@/components/ui/SeverityBadge'
 import { DataTable } from '@/components/ui/DataTable'
@@ -70,7 +71,6 @@ export default function OverviewPage() {
     }
   }, [lastMessage])
 
-  if (loading) return <LoadingState message="Loading dashboard overview..." />
   if (error) return <ErrorState message={error} retry={loadData} />
 
   // Format data for Recharts
@@ -121,13 +121,36 @@ export default function OverviewPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-        <Card className="bg-gray-900 border-gray-800">
-          <CardContent className="py-5">
-            <h3 className="text-gray-400 text-xs font-medium uppercase tracking-wider">Total Events (24h)</h3>
-            <p className="text-2xl font-bold text-white mt-1">{(overview?.events_received ?? overview?.total_events ?? 0).toLocaleString()}</p>
-          </CardContent>
-        </Card>
+      {loading ? (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <MetricCardSkeleton key={i} />
+            ))}
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <ChartCardSkeleton height="h-64" />
+            <ChartCardSkeleton height="h-64" />
+            <ChartCardSkeleton height="h-64" />
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2">
+              <ChartCardSkeleton height="h-80" />
+            </div>
+            <div>
+              <TableSkeleton rows={5} columns={2} />
+            </div>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+            <Card className="bg-gray-900 border-gray-800">
+              <CardContent className="py-5">
+                <h3 className="text-gray-400 text-xs font-medium uppercase tracking-wider">Total Events (24h)</h3>
+                <p className="text-2xl font-bold text-white mt-1">{(overview?.events_received ?? overview?.total_events ?? 0).toLocaleString()}</p>
+              </CardContent>
+            </Card>
         
         <Card className="bg-gray-900 border-gray-800">
           <CardContent className="py-5">
@@ -324,6 +347,8 @@ export default function OverviewPage() {
           </CardContent>
         </Card>
       </div>
+      </>
+      )}
     </div>
   )
 }

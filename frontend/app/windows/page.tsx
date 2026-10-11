@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { api } from '@/lib/api'
 import { Card, CardHeader, CardContent } from '@/components/ui/Card'
-import { PageHeader, LoadingState, ErrorState } from '@/components/ui/States'
+import { PageHeader, ErrorState } from '@/components/ui/States'
+import { MetricCardSkeleton, ChartCardSkeleton, TableSkeleton } from '@/components/ui/Skeleton'
 import { SeverityBadge } from '@/components/ui/SeverityBadge'
 import { DataTable } from '@/components/ui/DataTable'
 import { useWebSocket } from '@/hooks/useWebSocket'
@@ -72,7 +73,6 @@ export default function WindowsOverviewPage() {
     }
   }, [lastMessage])
 
-  if (loading) return <LoadingState message="Loading Windows overview telemetry..." />
   if (error) return <ErrorState message={error} retry={loadData} />
 
   const COLORS_SEVERITY: Record<string, string> = {
@@ -120,70 +120,89 @@ export default function WindowsOverviewPage() {
         </div>
       </div>
 
-      {/* Metric Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="p-4 flex flex-col justify-between">
-            <span className="text-xs font-medium text-gray-400">Total Events (24h)</span>
-            <div className="text-2xl font-bold text-sky-400 mt-2">
-              {totalEvents.toLocaleString()}
-            </div>
-            <span className="text-[10px] text-gray-500 mt-1">Windows Event Log ingest</span>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-4 flex flex-col justify-between">
-            <span className="text-xs font-medium text-gray-400">Open Alerts</span>
-            <div className="text-2xl font-bold text-red-400 mt-2">
-              {overview?.alerts_open ?? overview?.open_alerts ?? 0}
-            </div>
-            <span className="text-[10px] text-gray-500 mt-1">Active detections</span>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-4 flex flex-col justify-between">
-            <span className="text-xs font-medium text-gray-400">Online Agents</span>
-            <div className="text-2xl font-bold text-emerald-400 mt-2">
-              {agents?.online_agents ?? 0} <span className="text-xs text-gray-400 font-normal">/ {agents?.total_agents ?? 0} total</span>
-            </div>
-            <span className="text-[10px] text-gray-500 mt-1">Active Windows heartbeat</span>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-4 flex flex-col justify-between">
-            <span className="text-xs font-medium text-gray-400">Offline / Stale</span>
-            <div className="text-2xl font-bold text-amber-400 mt-2">
-              {agents?.offline_agents ?? 0}
-            </div>
-            <span className="text-[10px] text-gray-500 mt-1">Non-reporting endpoints</span>
-          </CardContent>
-        </Card>
-      </div>
-
       {/* Quick Navigation Pills */}
       <div className="flex flex-wrap gap-2">
-        <Link href="/windows-logs" className="px-3 py-1.5 rounded bg-gray-900 border border-gray-800 text-xs font-medium text-gray-300 hover:border-sky-500 hover:text-sky-400 transition-colors">
+        <Link href="/windows-logs" prefetch={true} className="px-3 py-1.5 rounded bg-gray-900 border border-gray-800 text-xs font-medium text-gray-300 hover:border-sky-500 hover:text-sky-400 transition-colors">
           Windows Event Logs →
         </Link>
-        <Link href="/live-events?os=windows" className="px-3 py-1.5 rounded bg-gray-900 border border-gray-800 text-xs font-medium text-gray-300 hover:border-sky-500 hover:text-sky-400 transition-colors">
+        <Link href="/live-events?os=windows" prefetch={true} className="px-3 py-1.5 rounded bg-gray-900 border border-gray-800 text-xs font-medium text-gray-300 hover:border-sky-500 hover:text-sky-400 transition-colors">
           Windows Live Stream →
         </Link>
-        <Link href="/authentication?os=windows" className="px-3 py-1.5 rounded bg-gray-900 border border-gray-800 text-xs font-medium text-gray-300 hover:border-sky-500 hover:text-sky-400 transition-colors">
+        <Link href="/authentication?os=windows" prefetch={true} className="px-3 py-1.5 rounded bg-gray-900 border border-gray-800 text-xs font-medium text-gray-300 hover:border-sky-500 hover:text-sky-400 transition-colors">
           Logon & Authentication (4624/4625) →
         </Link>
-        <Link href="/processes?os=windows" className="px-3 py-1.5 rounded bg-gray-900 border border-gray-800 text-xs font-medium text-gray-300 hover:border-sky-500 hover:text-sky-400 transition-colors">
+        <Link href="/processes?os=windows" prefetch={true} className="px-3 py-1.5 rounded bg-gray-900 border border-gray-800 text-xs font-medium text-gray-300 hover:border-sky-500 hover:text-sky-400 transition-colors">
           Process Creation (4688) →
         </Link>
-        <Link href="/network?os=windows" className="px-3 py-1.5 rounded bg-gray-900 border border-gray-800 text-xs font-medium text-gray-300 hover:border-sky-500 hover:text-sky-400 transition-colors">
+        <Link href="/network?os=windows" prefetch={true} className="px-3 py-1.5 rounded bg-gray-900 border border-gray-800 text-xs font-medium text-gray-300 hover:border-sky-500 hover:text-sky-400 transition-colors">
           Network Connections →
         </Link>
-        <Link href="/windows-history" className="px-3 py-1.5 rounded bg-gray-900 border border-gray-800 text-xs font-medium text-sky-400 hover:border-sky-400 transition-colors">
+        <Link href="/windows-history" prefetch={true} className="px-3 py-1.5 rounded bg-gray-900 border border-gray-800 text-xs font-medium text-sky-400 hover:border-sky-400 transition-colors">
           Windows Event History (All Agents) →
         </Link>
       </div>
+
+      {loading ? (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <MetricCardSkeleton key={i} />
+            ))}
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2">
+              <ChartCardSkeleton height="h-64" />
+            </div>
+            <div>
+              <ChartCardSkeleton height="h-64" />
+            </div>
+          </div>
+          <TableSkeleton rows={8} columns={5} />
+        </>
+      ) : (
+        <>
+          {/* Metric Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <Card>
+              <CardContent className="p-4 flex flex-col justify-between">
+                <span className="text-xs font-medium text-gray-400">Total Events (24h)</span>
+                <div className="text-2xl font-bold text-sky-400 mt-2">
+                  {totalEvents.toLocaleString()}
+                </div>
+                <span className="text-[10px] text-gray-500 mt-1">Windows Event Log ingest</span>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-4 flex flex-col justify-between">
+                <span className="text-xs font-medium text-gray-400">Open Alerts</span>
+                <div className="text-2xl font-bold text-red-400 mt-2">
+                  {overview?.alerts_open ?? overview?.open_alerts ?? 0}
+                </div>
+                <span className="text-[10px] text-gray-500 mt-1">Active detections</span>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-4 flex flex-col justify-between">
+                <span className="text-xs font-medium text-gray-400">Online Agents</span>
+                <div className="text-2xl font-bold text-emerald-400 mt-2">
+                  {agents?.online_agents ?? 0} <span className="text-xs text-gray-400 font-normal">/ {agents?.total_agents ?? 0} total</span>
+                </div>
+                <span className="text-[10px] text-gray-500 mt-1">Active Windows heartbeat</span>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-4 flex flex-col justify-between">
+                <span className="text-xs font-medium text-gray-400">Offline / Stale</span>
+                <div className="text-2xl font-bold text-amber-400 mt-2">
+                  {agents?.offline_agents ?? 0}
+                </div>
+                <span className="text-[10px] text-gray-500 mt-1">Non-reporting endpoints</span>
+              </CardContent>
+            </Card>
+          </div>
 
       {/* Charts Section */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -348,6 +367,8 @@ export default function WindowsOverviewPage() {
           </CardContent>
         </Card>
       </div>
+      </>
+      )}
 
       {selectedEvent && (
         <EventDetailsModal

@@ -157,6 +157,7 @@ function NavContent() {
               <div key={section.name}>
                 <Link
                   href={section.href}
+                  prefetch={true}
                   className={`flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
                     isActive
                       ? 'bg-blue-600/10 text-blue-400'
@@ -209,6 +210,7 @@ function NavContent() {
                         <Link
                           key={item.name + item.href}
                           href={item.href}
+                          prefetch={true}
                           className={`block px-3 py-1.5 text-sm rounded-md transition-colors ${
                             isActive
                               ? 'bg-blue-600/10 text-blue-400 font-medium'
@@ -231,6 +233,7 @@ function NavContent() {
       <div className="p-3 border-t border-gray-800 bg-gray-950/60">
         <Link
           href="/help"
+          prefetch={true}
           className={`flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
             pathname.startsWith('/help')
               ? 'bg-blue-600 text-white'

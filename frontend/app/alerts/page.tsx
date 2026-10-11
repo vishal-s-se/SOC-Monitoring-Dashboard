@@ -9,6 +9,7 @@ import { useWebSocket } from '@/hooks/useWebSocket'
 import { SeverityBadge } from '@/components/ui/SeverityBadge'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { AddToInvestigationModal } from '@/components/ui/AddToInvestigationModal'
+import { TableSkeleton } from '@/components/ui/Skeleton'
 
 export default function AlertsPage() {
   const [alerts, setAlerts] = useState<any[]>([])
@@ -50,7 +51,6 @@ export default function AlertsPage() {
     }
   }, [lastMessage])
 
-  if (loading) return <LoadingState message="Loading alerts..." />
   if (error) return <ErrorState message={error} retry={loadInitial} />
 
   return (
@@ -62,7 +62,10 @@ export default function AlertsPage() {
 
       <Card>
         <CardContent className="p-0">
-          <DataTable
+          {loading && alerts.length === 0 ? (
+            <TableSkeleton rows={5} columns={6} />
+          ) : (
+            <DataTable
             data={alerts}
             keyExtractor={(r) => r.alert_id}
             columns={[
@@ -108,6 +111,7 @@ export default function AlertsPage() {
               )}
             ]}
           />
+          )}
         </CardContent>
       </Card>
     </div>

@@ -3,7 +3,8 @@
 import { useEffect, useState, useCallback } from 'react'
 import { api } from '@/lib/api'
 import { Card, CardContent } from '@/components/ui/Card'
-import { PageHeader, LoadingState, ErrorState, EmptyState } from '@/components/ui/States'
+import { PageHeader, ErrorState, EmptyState } from '@/components/ui/States'
+import { TableSkeleton } from '@/components/ui/Skeleton'
 import { Pagination } from '@/components/ui/Pagination'
 import { MitreTechniqueDetailsModal } from '@/components/ui/MitreTechniqueDetailsModal'
 import { MitreGraphAnalysis } from '@/components/MitreGraphAnalysis'
@@ -247,7 +248,7 @@ export default function MitrePage() {
       ) : (
         /* Log View: Techniques Table */
         loading ? (
-          <LoadingState message="Loading MITRE ATT&CK techniques..." />
+          <TableSkeleton rows={10} columns={6} />
         ) : error ? (
           <ErrorState message={error} retry={fetchTechniques} />
         ) : techniques.length === 0 ? (

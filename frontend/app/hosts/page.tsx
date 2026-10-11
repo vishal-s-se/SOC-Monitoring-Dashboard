@@ -7,6 +7,7 @@ import { Card, CardContent } from '@/components/ui/Card'
 import { PageHeader, LoadingState, ErrorState } from '@/components/ui/States'
 import { DataTable } from '@/components/ui/DataTable'
 import { StatusBadge } from '@/components/ui/StatusBadge'
+import { TableSkeleton } from '@/components/ui/Skeleton'
 
 export default function HostsPage() {
   const [hosts, setHosts] = useState<any[]>([])
@@ -29,7 +30,6 @@ export default function HostsPage() {
     loadInitial()
   }, [])
 
-  if (loading) return <LoadingState message="Loading hosts..." />
   if (error) return <ErrorState message={error} retry={loadInitial} />
 
   return (
@@ -41,9 +41,12 @@ export default function HostsPage() {
 
       <Card>
         <CardContent className="p-0">
-          <DataTable
-            data={hosts}
-            keyExtractor={(r) => r.id}
+          {loading && hosts.length === 0 ? (
+            <TableSkeleton rows={5} columns={6} />
+          ) : (
+            <DataTable
+              data={hosts}
+              keyExtractor={(r) => r.id}
             columns={[
               { key: 'hostname', title: 'Hostname', render: (r) => (
                 <Link
@@ -94,6 +97,7 @@ export default function HostsPage() {
               )},
             ]}
           />
+          )}
         </CardContent>
       </Card>
     </div>

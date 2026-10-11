@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { api } from '@/lib/api'
 import { Card, CardContent } from '@/components/ui/Card'
 import { LoadingState, ErrorState, EmptyState } from '@/components/ui/States'
+import { TableSkeleton } from '@/components/ui/Skeleton'
 import { SeverityBadge } from '@/components/ui/SeverityBadge'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { DataTable } from '@/components/ui/DataTable'
@@ -429,7 +430,15 @@ function UserContextContent() {
 
 export default function UserContextPage() {
   return (
-    <Suspense fallback={<LoadingState message="Loading..." />}>
+    <Suspense fallback={
+      <div className="space-y-6">
+        <div className="p-4 bg-gray-900 border border-gray-800 rounded-lg">
+          <div className="h-6 w-48 bg-gray-800 rounded animate-pulse mb-2" />
+          <div className="h-4 w-96 bg-gray-800/60 rounded animate-pulse" />
+        </div>
+        <Card><CardContent className="p-0"><TableSkeleton rows={8} columns={6} /></CardContent></Card>
+      </div>
+    }>
       <UserContextContent />
     </Suspense>
   )

@@ -3,7 +3,8 @@
 import { useEffect, useState, useCallback } from 'react'
 import { api } from '@/lib/api'
 import { Card, CardContent } from '@/components/ui/Card'
-import { PageHeader, LoadingState, ErrorState, EmptyState } from '@/components/ui/States'
+import { PageHeader, ErrorState, EmptyState } from '@/components/ui/States'
+import { TableSkeleton } from '@/components/ui/Skeleton'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { SeverityBadge } from '@/components/ui/SeverityBadge'
 import { DataTable } from '@/components/ui/DataTable'
@@ -154,7 +155,11 @@ export default function UnifiedExplorerPage() {
       {error ? (
         <ErrorState message={error} retry={loadData} />
       ) : loading && events.length === 0 ? (
-        <LoadingState message="Loading Explorer..." />
+        <Card>
+          <CardContent className="p-0 overflow-x-auto">
+            <TableSkeleton rows={10} columns={8} />
+          </CardContent>
+        </Card>
       ) : events.length === 0 ? (
         <EmptyState
           title="No events found"

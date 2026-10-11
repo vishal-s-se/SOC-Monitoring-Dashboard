@@ -3,7 +3,8 @@
 import { useEffect, useState, useCallback } from 'react'
 import { api } from '@/lib/api'
 import { Card, CardContent } from '@/components/ui/Card'
-import { PageHeader, LoadingState, ErrorState, EmptyState } from '@/components/ui/States'
+import { PageHeader, ErrorState, EmptyState } from '@/components/ui/States'
+import { TableSkeleton } from '@/components/ui/Skeleton'
 import { DataTable } from '@/components/ui/DataTable'
 import { FilterBar, FilterInput, FilterSelect } from '@/components/ui/FilterBar'
 import { Pagination } from '@/components/ui/Pagination'
@@ -138,7 +139,11 @@ export default function InvestigationsPage() {
       {error ? (
         <ErrorState message={error} retry={loadData} />
       ) : loading && investigations.length === 0 ? (
-        <LoadingState message="Loading Investigations..." />
+        <Card>
+          <CardContent className="p-0 overflow-x-auto">
+            <TableSkeleton rows={8} columns={7} />
+          </CardContent>
+        </Card>
       ) : investigations.length === 0 ? (
         <EmptyState
           title="No investigations found"
