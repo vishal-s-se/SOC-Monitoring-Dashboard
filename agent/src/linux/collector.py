@@ -32,7 +32,7 @@ class LinuxLogCollector:
         # When cursor exists, batch up to 200 events at a time to prevent timeout and memory blowout
         command = ["journalctl", "--no-pager", "--output=json", "--show-cursor"]
         if state.get("cursor"):
-            command.extend(["--after-cursor", state["cursor"], "-n", "200"])
+            command.extend(["-n", "200", "--after-cursor", state["cursor"]])
         else:
             command.extend(["-n", "50"])
 
