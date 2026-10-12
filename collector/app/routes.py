@@ -34,11 +34,12 @@ async def register_agent(
     token_to_return = None
     token_hash = None
 
-    if auth["type"] == "enrollment":
+    if isinstance(auth, dict) and auth.get("type") == "enrollment":
         token_to_return = str(uuid.uuid4())
         token_hash = get_hash(token_to_return)
-        code = auth["code"]
-        code.used = True
+        code = auth.get("code")
+        if code:
+            code.used = True
 
     if agent:
         if token_hash:
@@ -128,7 +129,7 @@ async def receive_heartbeat(
             detail="Agent not found. Please register first."
         )
 
-    if auth["type"] == "token" and auth["agent"].agent_id != agent.agent_id:
+    if isinstance(auth, dict) and auth.get("type") == "token" and auth.get("agent") and auth["agent"].agent_id != agent.agent_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token does not match agent."

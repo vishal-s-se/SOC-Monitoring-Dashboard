@@ -44,15 +44,29 @@ class Config:
         data["agent"].setdefault("collection_interval", 5)
         data["agent"].setdefault("max_payload_bytes", 1048576)
         data["agent"].setdefault("retry_max_delay", 60)
-        data["agent"].setdefault("journald_enabled", False)
+        data["agent"].setdefault("journald_enabled", True)
 
         if "windows" not in data:
             data["windows"] = {}
-        data["windows"].setdefault("channels", ["Security", "System", "Application"])
+        data["windows"].setdefault("channels", [
+            "Security",
+            "System",
+            "Application",
+            "Microsoft-Windows-Sysmon/Operational",
+            "Microsoft-Windows-PowerShell/Operational",
+            "Microsoft-Windows-Windows Defender/Operational"
+        ])
         
         if "linux" not in data:
             data["linux"] = {}
-        data["linux"].setdefault("log_paths", ["/var/log/auth.log", "/var/log/syslog", "/var/log/messages", "/var/log/secure"])
+        data["linux"].setdefault("log_paths", [
+            "/var/log/auth.log",
+            "/var/log/syslog",
+            "/var/log/messages",
+            "/var/log/secure",
+            "/var/log/kern.log",
+            "/var/log/audit/audit.log"
+        ])
 
     @property
     def collector_url(self):

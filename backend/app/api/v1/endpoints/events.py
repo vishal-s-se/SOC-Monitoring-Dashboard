@@ -1,12 +1,13 @@
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import func
+from sqlalchemy import func, or_, cast, String
 from typing import Optional
 from datetime import datetime
 
 from backend.app.db.session import get_db
 from backend.app.models.event import Event as EventModel
+from backend.app.models.raw_log import RawLog as RawLogModel
 from backend.app.schemas.event import Event
 from backend.app.schemas.pagination import PaginatedResponse
 
@@ -32,7 +33,6 @@ async def list_events(
     end_time: Optional[datetime] = None,
     db: AsyncSession = Depends(get_db)
 ):
-    from sqlalchemy import or_
     stmt = select(EventModel)
 
     # Filtering
@@ -60,11 +60,20 @@ async def list_events(
         stmt = stmt.where(EventModel.destination_ip == destination_ip)
     if search:
         search_term = f"%{search}%"
+        stmt = stmt.outerjoin(RawLogModel, EventModel.raw_log_id == RawLogModel.id)
         stmt = stmt.where(or_(
+            EventModel.event_id.ilike(search_term),
             EventModel.username.ilike(search_term),
             EventModel.hostname.ilike(search_term),
             EventModel.event_type.ilike(search_term),
-            EventModel.source_type.ilike(search_term)
+            EventModel.event_category.ilike(search_term),
+            EventModel.source_type.ilike(search_term),
+            EventModel.severity.ilike(search_term),
+            EventModel.action.ilike(search_term),
+            EventModel.protocol.ilike(search_term),
+            cast(EventModel.metadata_, String).ilike(search_term),
+            RawLogModel.raw_payload.ilike(search_term),
+            RawLogModel.event_identifier.ilike(search_term)
         ))
     if start_time:
         stmt = stmt.where(EventModel.timestamp >= start_time)

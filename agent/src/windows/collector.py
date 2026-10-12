@@ -152,7 +152,13 @@ class WindowsEventLogCollector:
                 self.state_manager.set_state(state_key, state)
                     
         except Exception as e:
-            logger.error(f"Error collecting from channel {channel}: {e}")
+            err_msg = str(e).lower()
+            if "not found" in err_msg or "cannot find" in err_msg or "channel" in err_msg:
+                logger.warning(f"Windows Event channel '{channel}' is unavailable or not installed on this host: {e}")
+            elif "access is denied" in err_msg or "permission" in err_msg:
+                logger.warning(f"Permission denied accessing Windows Event channel '{channel}': {e}")
+            else:
+                logger.error(f"Error collecting from channel {channel}: {e}")
             
         return events_collected
 

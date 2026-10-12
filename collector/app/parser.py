@@ -33,20 +33,59 @@ def parse_windows_event(payload: Dict[str, Any]) -> Dict[str, Any]:
     elif event_data.get('TargetUserName'):
         normalized['username'] = event_data.get('TargetUserName')
 
-    if event_id == 4624:
+    # Extract channel from System
+    channel = system.get('Channel') or payload.get('Channel')
+    provider_name = ""
+    provider = system.get('Provider', {})
+    if isinstance(provider, dict):
+        provider_name = provider.get('Name') or ""
+    elif isinstance(provider, str):
+        provider_name = provider
+
+    # Extract message / description from EventData or payload
+    message = (
+        event_data.get('Message') or 
+        event_data.get('Description') or 
+        payload.get('Message') or 
+        payload.get('RawXML') or 
+        ""
+    )
+    if isinstance(message, str) and message:
+        normalized['message'] = message
+
+    # Category classification based on Channel, Provider, and EventID
+    channel_lower = str(channel or '').lower()
+    provider_lower = str(provider_name or '').lower()
+
+    if 'application' in channel_lower:
+        normalized['event_category'] = 'application'
+    elif 'system' in channel_lower:
+        normalized['event_category'] = 'system'
+    elif 'security' in channel_lower:
+        normalized['event_category'] = 'audit'
+    elif 'powershell' in channel_lower or 'powershell' in provider_lower:
+        normalized['event_category'] = 'powershell'
+    elif 'defender' in channel_lower or 'defender' in provider_lower:
+        normalized['event_category'] = 'endpoint_security'
+    elif 'sysmon' in channel_lower or 'sysmon' in provider_lower:
+        normalized['event_category'] = 'windows_sysmon'
+    elif 'firewall' in channel_lower or 'filtering' in channel_lower:
+        normalized['event_category'] = 'firewall'
+
+    if event_id in [4624, 4625, 4648, 4776]:
         normalized['event_category'] = 'authentication'
-        normalized['action'] = 'login_success'
-        normalized['source_ip'] = event_data.get('IpAddress')
-    elif event_id == 4625:
+        if event_id == 4624:
+            normalized['action'] = 'login_success'
+            normalized['source_ip'] = event_data.get('IpAddress')
+        elif event_id == 4625:
+            normalized['action'] = 'login_failed'
+            normalized['source_ip'] = event_data.get('IpAddress')
+    elif event_id in [4720, 4722, 4723, 4724, 4725, 4726, 4738]:
         normalized['event_category'] = 'authentication'
-        normalized['action'] = 'login_failed'
-        normalized['source_ip'] = event_data.get('IpAddress')
-    elif event_id in [4720]:
-        normalized['event_category'] = 'account'
-        normalized['event_type'] = 'user_created'
-        normalized['action'] = 'created'
+        normalized['event_type'] = 'account_management'
+        normalized['action'] = 'created' if event_id == 4720 else 'modified'
     elif event_id in [4697, 7045]:
-        normalized['event_category'] = 'service'
+        normalized['event_category'] = 'services'
         normalized['event_type'] = 'service_created'
     elif event_id in [1, 4688]:
         normalized['event_category'] = 'process'
@@ -55,7 +94,11 @@ def parse_windows_event(payload: Dict[str, Any]) -> Dict[str, Any]:
         cmdline = str(event_data.get('CommandLine', '')).lower()
         image = str(event_data.get('Image', '')).lower()
         if 'powershell' in cmdline or 'powershell' in image:
+            normalized['event_category'] = 'powershell'
             normalized['event_type'] = 'powershell'
+    elif event_id in [4103, 4104]:
+        normalized['event_category'] = 'powershell'
+        normalized['event_type'] = 'script_block_execution'
     elif event_id == 3:
         normalized['event_category'] = 'network'
         normalized['source_ip'] = event_data.get('SourceIp')
@@ -64,10 +107,13 @@ def parse_windows_event(payload: Dict[str, Any]) -> Dict[str, Any]:
         normalized['destination_port'] = int(event_data.get('DestinationPort')) if event_data.get('DestinationPort') else None
         normalized['protocol'] = event_data.get('Protocol')
         normalized['action'] = "network_connection"
-    elif event_id == 5156: # Windows Filtering Platform Deny
+    elif event_id in [5156, 5157]: # Windows Filtering Platform Allow / Deny
         normalized['event_category'] = 'firewall'
-        normalized['action'] = 'deny'
+        normalized['action'] = 'deny' if event_id == 5157 else 'allow'
         normalized['source_ip'] = event_data.get('SourceAddress')
+    elif event_id in [1116, 1117]: # Windows Defender Detection
+        normalized['event_category'] = 'endpoint_security'
+        normalized['action'] = 'threat_detected'
 
     level = system.get('Level')
     if level is None:
@@ -88,14 +134,11 @@ def parse_windows_event(payload: Dict[str, Any]) -> Dict[str, Any]:
     if system.get('EventRecordID') is not None:
         native_identifiers['EventRecordID'] = system.get('EventRecordID')
         
-    provider = system.get('Provider', {})
-    if isinstance(provider, dict) and provider.get('Name'):
-        native_identifiers['Provider'] = provider.get('Name')
-    elif isinstance(provider, str):
-        native_identifiers['Provider'] = provider
+    if provider_name:
+        native_identifiers['Provider'] = provider_name
         
-    if system.get('Channel'):
-        native_identifiers['Channel'] = system.get('Channel')
+    if channel:
+        native_identifiers['Channel'] = channel
         
     if system.get('Computer'):
         native_identifiers['Computer'] = system.get('Computer')
@@ -115,7 +158,6 @@ def parse_windows_event(payload: Dict[str, Any]) -> Dict[str, Any]:
 def parse_linux_event(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Parse Linux syslog/auth/journald structure."""
     normalized = {}
-    normalized['event_category'] = 'linux'
 
     inner = payload.get('raw_event') if isinstance(payload.get('raw_event'), dict) else payload
 
@@ -123,9 +165,20 @@ def parse_linux_event(payload: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(message, str):
         message = str(message or '')
 
+    if message:
+        normalized['message'] = message
+
     process = inner.get('SYSLOG_IDENTIFIER') or inner.get('_COMM') or inner.get('process', '')
     if not isinstance(process, str):
         process = str(process or '')
+
+    systemd_unit = str(inner.get('_SYSTEMD_UNIT') or '')
+
+    if not inner or (not message and not process and not systemd_unit):
+        normalized['event_category'] = 'linux'
+        return normalized
+
+    normalized['event_category'] = 'system'
 
     priority = inner.get('PRIORITY')
     if priority is not None:
@@ -140,7 +193,12 @@ def parse_linux_event(payload: Dict[str, Any]) -> Dict[str, Any]:
         except (ValueError, TypeError):
             pass
 
-    if 'sshd' in message or 'sshd' in process:
+    # Source and category derivation
+    proc_lower = process.lower()
+    msg_lower = message.lower()
+    unit_lower = systemd_unit.lower()
+
+    if 'sshd' in proc_lower or 'sshd' in msg_lower:
         normalized['event_category'] = 'authentication'
         normalized['event_type'] = 'ssh_login'
         normalized['protocol'] = 'ssh'
@@ -170,12 +228,10 @@ def parse_linux_event(payload: Dict[str, Any]) -> Dict[str, Any]:
                         pass
             except (ValueError, IndexError):
                 pass
-
-    if 'sudo' in message or 'sudo' in process:
+    elif 'sudo' in proc_lower or 'sudo' in msg_lower:
         normalized['event_category'] = 'process'
         normalized['event_type'] = 'sudo'
         normalized['action'] = 'privilege_escalation'
-        # Extract user if available
         if 'USER=' in message:
             try:
                 target_user = message.split('USER=')[1].split(';')[0].strip()
@@ -183,8 +239,14 @@ def parse_linux_event(payload: Dict[str, Any]) -> Dict[str, Any]:
                     normalized['username'] = target_user
             except Exception:
                 pass
-
-    if 'iptables' in message.lower() or 'ufw block' in message.lower():
+    elif 'su' in proc_lower or 'pam' in proc_lower:
+        normalized['event_category'] = 'authentication'
+        normalized['event_type'] = 'auth_session'
+    elif 'kernel' in proc_lower or '_transport' in inner and inner['_transport'] == 'kernel':
+        normalized['event_category'] = 'kernel'
+    elif 'audit' in proc_lower or 'audit' in unit_lower or 'type=' in msg_lower:
+        normalized['event_category'] = 'audit'
+    elif 'iptables' in msg_lower or 'ufw block' in msg_lower or 'nftables' in msg_lower or 'firewalld' in proc_lower:
         normalized['event_category'] = 'firewall'
         normalized['action'] = 'deny'
         if 'SRC=' in message:
@@ -192,6 +254,14 @@ def parse_linux_event(payload: Dict[str, Any]) -> Dict[str, Any]:
                 normalized['source_ip'] = message.split('SRC=')[1].split()[0]
             except:
                 pass
+    elif 'named' in proc_lower or 'systemd-resolved' in proc_lower or 'dns' in proc_lower:
+        normalized['event_category'] = 'network'
+    elif 'apt' in proc_lower or 'dpkg' in proc_lower or 'yum' in proc_lower or 'dnf' in proc_lower:
+        normalized['event_category'] = 'package_management'
+    elif 'cron' in proc_lower or 'systemd' in proc_lower:
+        normalized['event_category'] = 'services'
+    elif 'app' in unit_lower or 'nginx' in proc_lower or 'apache' in proc_lower:
+        normalized['event_category'] = 'application'
 
     # Extract Native Linux Identifiers from both inner and payload
     native_identifiers = {}

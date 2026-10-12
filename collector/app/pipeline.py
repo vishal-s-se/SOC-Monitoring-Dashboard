@@ -54,8 +54,9 @@ async def process_event(event_req: EventRequest, agent: Agent, db: AsyncSession)
     # Inject native identifiers into metadata
     native_ids = normalized_fields.get("native_identifiers", {})
     if native_ids:
-        # Avoid mutating the raw metadata if possible, but we already copied it implicitly by `or {}`
         enriched_metadata.update(native_ids)
+    if "message" in normalized_fields and normalized_fields["message"]:
+        enriched_metadata["message"] = normalized_fields["message"]
 
     # 6. Normalized Persistence
     # Merge extracted fields with envelope fields

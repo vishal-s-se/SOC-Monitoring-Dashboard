@@ -27,12 +27,17 @@ class LinuxLogCollector:
     def collect_journald(self):
         state_key = "linux_journald"
         state = self.state_manager.get_state(state_key, default={"cursor": None})
+        
+        # When no cursor exists, bind to the last 50 events to avoid scanning entire historical journal
+        # When cursor exists, batch up to 200 events at a time to prevent timeout and memory blowout
         command = ["journalctl", "--no-pager", "--output=json", "--show-cursor"]
         if state.get("cursor"):
-            command.extend(["--after-cursor", state["cursor"]])
+            command.extend(["--after-cursor", state["cursor"], "-n", "200"])
+        else:
+            command.extend(["-n", "50"])
 
         try:
-            result = subprocess.run(command, capture_output=True, text=True, timeout=30, check=False)
+            result = subprocess.run(command, capture_output=True, text=True, timeout=15, check=False)
         except (OSError, subprocess.TimeoutExpired) as error:
             logger.warning("Unable to read journald: %s", error)
             return 0
@@ -41,9 +46,10 @@ class LinuxLogCollector:
             return 0
 
         events_collected = 0
+        new_cursor = None
         for line in result.stdout.splitlines():
             if line.startswith("-- cursor:"):
-                state["cursor"] = line.partition(":")[2].strip()
+                new_cursor = line.partition(":")[2].strip()
                 continue
             try:
                 raw_event = json.loads(line)
@@ -68,10 +74,12 @@ class LinuxLogCollector:
                 timestamp=timestamp,
             )
             self.transport.send_event(envelope)
-            state["cursor"] = cursor
+            new_cursor = cursor
             events_collected += 1
 
-        self.state_manager.set_state(state_key, state)
+        if new_cursor:
+            state["cursor"] = new_cursor
+            self.state_manager.set_state(state_key, state)
         return events_collected
 
     def _get_file_identity(self, path):

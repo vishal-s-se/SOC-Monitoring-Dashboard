@@ -2072,6 +2072,55 @@ export const TROUBLESHOOTING_LIBRARY: TroubleshootingItem[] = [
     },
     verification: "Installer prompts securely for token: 'Enrollment Token (hidden): '.",
     escalation: "Explicitly invoke under Bash: bash ./install-agent.sh --host \"COLLECTOR_HOST\""
+  },
+  {
+    id: "ts-32",
+    symptom: "Testing Windows event collection with custom verification marker fails: 'The source was not found'",
+    platform: "windows",
+    possibleCauses: [
+      "PowerShell Write-EventLog requires an existing registered EventSource in the Windows Registry before writing",
+      "Using non-elevated terminal when attempting to register a new event source",
+      "EventCreate utility not given /ID between 1 and 1000"
+    ],
+    diagnosticSteps: [
+      { label: "Verify Registered Sources", command: "[System.Diagnostics.EventLog]::SourceExists('SOCMonitorTest')", explanation: "Check if the test event source is already registered." },
+      { label: "Test with eventcreate utility", command: "eventcreate /L APPLICATION /T INFORMATION /SO \"SOCMonitor\" /ID 100 /D \"SOCMON-VERIFY-TEST-01: Windows harmless test marker\"", explanation: "Use standard built-in eventcreate tool." }
+    ],
+    safeFix: {
+      title: "Register Harmless EventSource or Use Built-in eventcreate",
+      steps: [
+        "In an elevated PowerShell, register a dedicated test source once: New-EventLog -LogName Application -Source 'SOCMonitor' -ErrorAction SilentlyContinue",
+        "Write the marker: Write-EventLog -LogName Application -Source 'SOCMonitor' -EventId 100 -EntryType Information -Message 'SOCMON-VERIFY-TEST-01'",
+        "Or use eventcreate directly from any command prompt: eventcreate /L APPLICATION /T INFORMATION /SO \"SOCMonitor\" /ID 100 /D \"SOCMON-VERIFY-TEST-01\""
+      ],
+      command: "eventcreate /L APPLICATION /T INFORMATION /SO \"SOCMonitor\" /ID 100 /D \"SOCMON-VERIFY-TEST-01\""
+    },
+    verification: "Searching for 'SOCMON-VERIFY-TEST-01' in /windows-logs or /raw-logs returns the generated event.",
+    escalation: "Confirm Windows Agent configuration includes 'Application' in enabled_channels."
+  },
+  {
+    id: "ts-33",
+    symptom: "Operational Safety Checklist: Preserving Database Integrity and Telemetry Authenticity",
+    platform: "general",
+    possibleCauses: [
+      "Accidentally wiping PostgreSQL database or dropping tables when resolving service issues",
+      "Hardcoding mock data or fake event counts instead of querying real backend telemetry",
+      "Exposing sensitive agent auth tokens or DB credentials in shell command history"
+    ],
+    diagnosticSteps: [
+      { label: "Check Database Table Row Counts", command: "psql -U postgres -d soc_monitor -c \"SELECT 'events' as tbl, count(*) FROM event UNION ALL SELECT 'raw_logs', count(*) FROM raw_log;\"", explanation: "Verify real ingested records." }
+    ],
+    safeFix: {
+      title: "Follow SOC Monitor Data Safety Standard Operating Procedures",
+      steps: [
+        "DO NOT drop, truncate, or wipe PostgreSQL database tables. Historical provenance is critical for investigations.",
+        "DO NOT introduce mock telemetry or hardcoded chart metrics; all dashboard numbers must derive from real database queries.",
+        "DO always mask enrollment tokens in logs, URLs, and screenshots using SHA-256 digests or [REDACTED].",
+        "DO use bounded queries (e.g., journalctl -n 200 or PowerShell -Tail) to avoid long processing freezes on large event logs."
+      ]
+    },
+    verification: "Fleet analytics, investigation timelines, and raw log queries accurately reflect authentic endpoint telemetry.",
+    escalation: "Refer to Help Center category 'Safety & Maintenance' for scheduled vacuuming and retention policies."
   }
 ];
 
