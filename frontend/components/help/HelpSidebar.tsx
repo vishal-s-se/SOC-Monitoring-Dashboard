@@ -110,7 +110,7 @@ export function HelpSidebar({
           Diagnostics
         </button>
         <button
-          onClick={() => onSelectTopic("glossary-faq", "soc-glossary")}
+          onClick={() => onSelectTopic("faq-glossary", "glossary-section")}
           className="px-2 py-1.5 rounded bg-gray-900 hover:bg-gray-800 text-gray-300 border border-gray-800 hover:border-gray-700 flex items-center gap-1.5 font-medium transition-colors text-[11px]"
         >
           <svg className="w-3.5 h-3.5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -119,7 +119,7 @@ export function HelpSidebar({
           Glossary (30+)
         </button>
         <button
-          onClick={() => onSelectTopic("glossary-faq", "faq-section")}
+          onClick={() => onSelectTopic("faq-glossary", "faq-section")}
           className="px-2 py-1.5 rounded bg-gray-900 hover:bg-gray-800 text-gray-300 border border-gray-800 hover:border-gray-700 flex items-center gap-1.5 font-medium transition-colors text-[11px]"
         >
           <svg className="w-3.5 h-3.5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">

@@ -420,7 +420,7 @@ export function HelpContent({
       {/* Special Interactive Views */}
       {topic.id === "troubleshooting-library" ? (
         <TroubleshootingLibrary />
-      ) : topic.id === "soc-glossary" ? (
+      ) : topic.id === "glossary-section" || topic.id === "soc-glossary" ? (
         <GlossarySection
           onSelectTopic={(tId) => {
             // Find category for topic

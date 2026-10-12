@@ -373,39 +373,47 @@ Unlike Windows, Linux does not utilize monolithic numeric Event IDs. The SOC Mon
         summary: "Step-by-step instructions to install the Windows Agent service.",
         content: `
 ### Windows Agent Installation
-The Windows Agent is installed as an automatic Windows Service (\`SOCAgent\`) running under \`LocalSystem\`.
+The Windows Agent installs as an automatic Windows Service (\`SOCMonitorAgent\`) located in \`C:\\ProgramData\\SOCMonitorAgent\`.
 
 #### Prerequisites
-- Windows 10/11 or Windows Server 2016+
+- Windows 10/11 or Windows Server 2016+ (x64)
 - PowerShell 5.1+ running as **Administrator**
 - Network access to the Collector at port 5000 (e.g. \`http://192.168.56.1:5000\`)
+- Visual C++ 2015-2022 Redistributable (x64)
 
 #### Step-by-Step Procedure
 
 1. **Generate an Enrollment Code:**
-   In the dashboard, click **Add Endpoint** in the header. Select **Windows**, and copy the generated one-time enrollment token (e.g. \`<ENROLLMENT_TOKEN>\`).
+   In the dashboard header, click **Add Endpoint**. Select **Windows**, and note your fresh one-time enrollment token.
 
 2. **Execute the Installer Script:**
-   Open PowerShell as Administrator in the repository or download folder:
+   Run the interactive one-liner in Administrator PowerShell (prompts securely with hidden input, passing the token via \`$env:AGENTAUTHTOKEN\` and clearing it upon completion):
    \`\`\`powershell
-   powershell.exe -ExecutionPolicy Bypass -File .\\artifacts\\install-agent.ps1 -CollectorUrl "http://192.168.56.1:5000" -EnrollmentToken "<ENROLLMENT_TOKEN>"
+   $env:AGENTAUTHTOKEN = Read-Host "Paste enrollment token"; try { Invoke-WebRequest -Uri "http://COLLECTOR_HOST:5000/api/v1/agents/download/install-agent.ps1" -OutFile "install-agent.ps1"; .\\install-agent.ps1 -CollectorHost "COLLECTOR_HOST" -CollectorPort 5000 } finally { Remove-Item Env:AGENTAUTHTOKEN -ErrorAction SilentlyContinue }
    \`\`\`
+   *(Replace \`COLLECTOR_HOST\` with your SOC server IP, e.g. \`192.168.56.1\` for VirtualBox Host-Only)*
 
 3. **Verify Service Status:**
    \`\`\`powershell
-   Get-Service -Name SOCAgent
+   Get-Service SOCMonitorAgent
    \`\`\`
    Expected status: \`Running\`.
 
-4. **Confirm Ingestion:**
-   Within 30 seconds, the agent will appear as **ONLINE** in **Endpoint Management → Agents** (\`/agents\`).
+4. **Inspect Service Logs:**
+   \`\`\`powershell
+   Get-Content -Tail 25 "C:\\ProgramData\\SOCMonitorAgent\\agent.log"
+   \`\`\`
+
+5. **Confirm Ingestion:**
+   Within 30–60 seconds, the agent will appear as **ONLINE** in **Endpoint Management → Agents** (\`/agents\`).
         `,
         commands: [
-          { label: "Check Windows Service", cmd: "Get-Service -Name SOCAgent", platform: "windows" },
-          { label: "Check Windows Agent Logs", cmd: "Get-Content \"C:\\Program Files\\SOCAgent\\agent.log\" -Tail 30", platform: "windows" },
-          { label: "Restart Windows Service", cmd: "Restart-Service -Name SOCAgent", platform: "windows" }
+          { label: "Check Windows Service", cmd: "Get-Service -Name SOCMonitorAgent", platform: "windows" },
+          { label: "Check Windows Agent Logs", cmd: "Get-Content -Tail 30 \"C:\\ProgramData\\SOCMonitorAgent\\agent.log\"", platform: "windows" },
+          { label: "Restart Windows Service", cmd: "Restart-Service -Name SOCMonitorAgent", platform: "windows" },
+          { label: "Dedicated Uninstaller (Preserves Identity)", cmd: "& \"C:\\ProgramData\\SOCMonitorAgent\\uninstall-agent.ps1\"", platform: "windows" }
         ],
-        relatedTopicIds: ["hosts-vs-agents", "install-linux"]
+        relatedTopicIds: ["hosts-vs-agents", "install-linux", "ts-http-401-registration"]
       },
       {
         id: "install-linux",
@@ -413,41 +421,52 @@ The Windows Agent is installed as an automatic Windows Service (\`SOCAgent\`) ru
         summary: "Step-by-step instructions to install the Linux systemd agent.",
         content: `
 ### Linux / Kali VM Agent Installation
-The Linux Agent runs as a persistent systemd daemon (\`soc-agent.service\`) reading systemd journal logs.
+The Linux Agent runs as a persistent systemd daemon (\`soc-agent.service\`) executing \`/opt/soc-monitor-agent/soc-agent\` and reading systemd journal logs.
 
 #### Prerequisites
 - Debian, Ubuntu, or Kali Linux 2023/2024 (amd64)
 - Root or sudo privileges
-- Network connectivity to host Collector (\`http://192.168.56.1:5000\`)
+- Network connectivity to Collector (\`http://COLLECTOR_HOST:5000\`)
+- Systemd with \`systemd-journald\` active
 
 #### Step-by-Step Procedure
 
-1. **Generate Enrollment Token:**
-   In the dashboard, click **Add Endpoint**, select **Linux**, and copy the token.
-
-2. **Run Installer Script:**
+1. **Verify Shell Syntax Before Execution:**
+   Always inspect the downloaded installer syntax using \`bash -n\` before running:
    \`\`\`bash
-   sudo ./artifacts/install-agent.sh --collector-url "http://192.168.56.1:5000" --enrollment-token "<ENROLLMENT_TOKEN>"
+   curl -fsSL "http://COLLECTOR_HOST:5000/api/v1/agents/download/install-agent.sh" -o install-agent.sh
+   bash -n install-agent.sh
    \`\`\`
+   If Bash returns exit code 0 without output, the script syntax is verified.
+
+2. **Execute the Installer Script:**
+   Make executable and run using sudo, supplying the token via the \`AGENTAUTHTOKEN\` environment variable or interactive hidden prompt:
+   \`\`\`bash
+   chmod +x install-agent.sh
+   sudo AGENTAUTHTOKEN="<YOUR_ENROLLMENT_TOKEN>" ./install-agent.sh --host "COLLECTOR_HOST" --port 5000
+   \`\`\`
+   *(The script's exit trap automatically wipes \`AGENTAUTHTOKEN\` from process memory on completion)*
 
 3. **Verify Systemd Service:**
    \`\`\`bash
-   sudo systemctl status soc-agent.service
+   sudo systemctl status soc-agent.service --no-pager
    \`\`\`
    Expected status: \`active (running)\`.
 
-4. **Verify Telemetry Stream:**
-   View the live agent log:
+4. **Verify Telemetry Stream & Registration:**
+   View the live agent journal logs to confirm successful registration:
    \`\`\`bash
-   sudo journalctl -u soc-agent.service -f
+   sudo journalctl -u soc-agent.service -n 50 --no-pager
    \`\`\`
         `,
         commands: [
           { label: "Check Linux Daemon", cmd: "sudo systemctl status soc-agent.service --no-pager", platform: "linux" },
-          { label: "Tail Linux Agent Logs", cmd: "sudo journalctl -u soc-agent.service -n 50 --no-pager", platform: "linux" },
-          { label: "Restart Linux Daemon", cmd: "sudo systemctl restart soc-agent.service", platform: "linux" }
+          { label: "Inspect Agent Journal Logs", cmd: "sudo journalctl -u soc-agent.service -n 50 --no-pager", platform: "linux" },
+          { label: "Restart Linux Daemon", cmd: "sudo systemctl restart soc-agent.service", platform: "linux" },
+          { label: "Test Local Ingestion Event", cmd: "logger \"SOC Monitor test event from Kali Linux\"", platform: "linux" },
+          { label: "Dedicated Uninstaller (Preserves Identity)", cmd: "sudo /opt/soc-monitor-agent/uninstall-agent.sh", platform: "linux" }
         ],
-        relatedTopicIds: ["hosts-vs-agents", "install-windows"]
+        relatedTopicIds: ["hosts-vs-agents", "install-windows", "ts-shell-syntax-error", "ts-linux-events-missing"]
       }
     ]
   },
@@ -790,16 +809,445 @@ Provides real-time observability into the SOC Monitor infrastructure:
     title: "O. Common Errors & Troubleshooting",
     shortTitle: "Troubleshooting",
     icon: "Wrench",
-    description: "Comprehensive library of 25 common operational symptoms, safe fixes, and verification steps.",
+    description: "Detailed diagnostic runbooks, safe fixes, command line procedures, and a searchable library of 31 operational scenarios.",
     topics: [
       {
         id: "troubleshooting-library",
-        title: "Searchable Troubleshooting Guide (25 Scenarios)",
-        summary: "Detailed diagnostic commands, root causes, and safe corrective actions.",
+        title: "Searchable Troubleshooting Library (31 Scenarios)",
+        badge: "Interactive Finder",
+        summary: "Searchable catalog of 31 real-world operational scenarios, root causes, copyable commands, and verification checks.",
         content: `
-Use the interactive troubleshooting finder below or search by symptom keyword (e.g. "offline", "token", "127.0.0.1", "service").
+### Interactive Troubleshooting Finder
+Use the interactive scenario finder below to filter by platform (Windows, Linux, Collector, Backend, Network) or search by keyword (e.g., \`401\`, \`offline\`, \`syntax error\`, \`192.168.56.1\`, \`heartbeat\`, \`journald\`, \`Zsh\`).
         `,
-        relatedTopicIds: ["hosts-vs-agents", "install-windows", "install-linux"]
+        relatedTopicIds: [
+          "ts-http-401-registration",
+          "ts-shell-syntax-error",
+          "ts-collector-connectivity",
+          "ts-service-running-endpoint-offline",
+          "ts-linux-events-missing",
+          "ts-shell-differences-tokens"
+        ]
+      },
+      {
+        id: "ts-http-401-registration",
+        title: "Article A: HTTP 401 During Agent Registration (Registration failed)",
+        badge: "Authentication Error",
+        summary: "Diagnosing HTTP 401 Unauthorized, Registration failed, invalid or expired enrollment token, and token rejections.",
+        content: `
+### Symptoms
+During agent installation or immediate post-install service startup, registration fails with an HTTP 401 error.
+- Installer terminates with: \`Error: Enrollment failed: The server rejected the enrollment token as invalid or expired.\`
+- Linux journalctl or agent log displays: \`401 Client Error: Unauthorized for url: http://COLLECTOR_HOST:5000/api/v1/collector/register\`
+- Windows \`agent.log\` records: \`Registration rejected: 401 Unauthorized\`.
+- The endpoint is listed as \`UNKNOWN\` or remains absent in the dashboard.
+
+### Meaning of HTTP 401 Unauthorized
+HTTP 401 specifically indicates **authentication failure**. The network path between the agent and collector is completely operational, the collector received the registration request, but the server cryptographically rejected the provided enrollment token.
+
+> [!IMPORTANT]
+> **Reachability vs. Authentication:** An HTTP 200 response when checking \`http://COLLECTOR_HOST:5000/docs\` or \`/health\` only proves network routing and open firewall ports. It does **not** prove agent authentication will succeed. Registration requires an active, single-use enrollment token stored in the server database.
+
+### Likely Causes
+1. **Expired Token:** Enrollment tokens have a strict 24-hour expiration window.
+2. **Already-Used Token:** Enrollment tokens are strictly **single-use**. Once registered, the server marks the code consumed.
+3. **Incomplete or Truncated Token:** Copying the token inadvertently missed characters or included surrounding shell quotes or whitespace.
+4. **Target OS Mismatch:** Generating an enrollment code with target OS set to Windows and providing it to a Linux agent.
+5. **Missing Token Variable:** Running the installer without setting \`AGENTAUTHTOKEN\` or pressing Enter through the prompt without pasting.
+
+### Safe Diagnostic Steps
+
+1. **Inspect Agent Service Status on Linux:**
+\`\`\`bash
+sudo systemctl status soc-agent.service --no-pager
+\`\`\`
+*(Check whether the service is actively running or crashing in a restart backoff loop)*
+
+2. **Inspect Detailed Registration Failure in Systemd Journal:**
+\`\`\`bash
+sudo journalctl -u soc-agent.service -n 50 --no-pager
+\`\`\`
+Look for lines containing:
+\`Invalid or expired enrollment code\`, \`401 Client Error\`, or \`registration rejected\`.
+
+3. **Inspect Registration Status on Windows:**
+\`\`\`powershell
+Get-Service SOCMonitorAgent
+Get-Content -Tail 30 "C:\\ProgramData\\SOCMonitorAgent\\agent.log"
+\`\`\`
+
+> [!WARNING]
+> A running service (\`active (running)\` on Linux or \`Running\` on Windows) does **not** mean registration succeeded. The agent daemon process starts first, then asynchronously attempts registration with exponential backoff retries.
+
+### Corrective Action: Step-by-Step Recovery
+
+1. **Generate a Fresh Token in the Dashboard:**
+   - In the SOC Monitor dashboard header, click **Add Endpoint**.
+   - Select the target operating system (**Linux** for Kali/Debian, **Windows** for Windows endpoints).
+   - Click the copy button next to the freshly generated enrollment token.
+
+2. **Re-run the Installer with the Fresh Token:**
+   - **On Linux / Kali:**
+   \`\`\`bash
+   sudo AGENTAUTHTOKEN="<PASTE_FRESH_TOKEN_HERE>" ./install-agent.sh --host "COLLECTOR_HOST" --port 5000
+   \`\`\`
+   - **On Windows:**
+   \`\`\`powershell
+   $env:AGENTAUTHTOKEN = Read-Host "Paste enrollment token"
+   .\\install-agent.ps1 -CollectorHost "COLLECTOR_HOST" -CollectorPort 5000
+   Remove-Item Env:AGENTAUTHTOKEN -ErrorAction SilentlyContinue
+   \`\`\`
+
+3. **Verify Immediate Registration Success in Journal:**
+\`\`\`bash
+sudo journalctl -u soc-agent.service -n 20 --no-pager
+\`\`\`
+Successful output contains:
+\`Agent registered successfully. Private identity persisted to state directory.\`
+
+### What to Do If a Fresh Token Still Receives 401
+- Verify system clock synchronization (\`timedatectl\` on Linux, \`w32tm /query /status\` on Windows). Time drift greater than 5 minutes will fail token timestamp validation.
+- Verify that the collector is connected to the expected PostgreSQL database and not a stale in-memory instance.
+- Check collector console logs on port 5000 to observe the rejection reason logged by \`collector/app/routes.py\`.
+- Never post, email, screenshot, or share raw enrollment tokens in support tickets or chat channels.
+        `,
+        commands: [
+          { label: "Check Linux Service Status", cmd: "sudo systemctl status soc-agent.service --no-pager", platform: "linux" },
+          { label: "Inspect Registration Rejection in Journal", cmd: "sudo journalctl -u soc-agent.service -n 50 --no-pager", platform: "linux" },
+          { label: "Check Windows Service Status", cmd: "Get-Service SOCMonitorAgent", platform: "windows" },
+          { label: "Check Windows Agent Registration Log", cmd: "Get-Content -Tail 30 \"C:\\ProgramData\\SOCMonitorAgent\\agent.log\"", platform: "windows" }
+        ],
+        relatedTopicIds: ["troubleshooting-library", "ts-service-running-endpoint-offline", "ts-shell-differences-tokens", "safe-ops-dos-and-donts"]
+      },
+      {
+        id: "ts-shell-syntax-error",
+        title: "Article B: Linux Installer Shell Syntax Errors (Installer syntax error)",
+        badge: "Script Execution Error",
+        summary: "Troubleshooting Linux & Kali Linux installation: installer syntax error near unexpected token, bash -n pre-flight checks, and verified CLI arguments.",
+        content: `
+### Symptoms
+When executing the Linux installer on Kali Linux or Ubuntu:
+\`\`\`text
+./install-agent.sh: line 204: syntax error near unexpected token '(' while looking for matching ')'
+\`\`\`
+The script aborts immediately before installing binaries, configuring systemd services, or registering the agent.
+
+### Root Cause Analysis
+Shell scripts are interpreted sequentially by Bash. When a string literal contains an unbalanced or incorrectly escaped quotation mark (for example, nested single quotes inside \`tr -d '"'\\''\`), Bash treats all subsequent script lines as part of an unclosed string literal. 
+
+When the parser finally encounters a parenthesis (such as in \`echo "Note: Local identity (/var/lib/soc-monitor-agent/...)"\`), Bash interprets the closing parenthesis as an illegal command delimiter rather than literal text, causing:
+\`syntax error near unexpected token '(' while looking for matching ')'\`.
+
+### Safe Syntax-Check Workflow (Pre-Execution Validation)
+Never execute downloaded scripts blindly. Validate the syntax first without executing any code:
+
+1. **Download the Script Safely:**
+\`\`\`bash
+curl -fsSL "http://COLLECTOR_HOST:5000/api/v1/agents/download/install-agent.sh" -o install-agent.sh
+\`\`\`
+
+2. **Validate Syntax with \`bash -n\` (No Execution):**
+\`\`\`bash
+bash -n install-agent.sh
+\`\`\`
+- If the command returns **exit code 0** with no terminal output, the script syntax is valid and safe to execute.
+- If there is a syntax error, Bash will print the exact offending line and terminate without running any commands.
+
+3. **Execute Only After Verification:**
+\`\`\`bash
+chmod +x install-agent.sh
+sudo AGENTAUTHTOKEN="<YOUR_TOKEN>" ./install-agent.sh --host "COLLECTOR_HOST" --port 5000
+\`\`\`
+
+### Verified Argument Syntax
+The authoritative Linux installer supports both named flags and positional parameters:
+- \`--host <IP_OR_HOSTNAME>\` (or \`-h\`): The collector IP address (e.g. \`192.168.56.1\`).
+- \`--port <PORT>\` (or \`-p\`): The collector port (defaults to \`5000\`).
+- \`--token <TOKEN>\` (or \`-t\`): Enrollment token (or pass via \`AGENTAUTHTOKEN\` environment variable).
+
+### Corrective Action & Verification
+- If you encounter a syntax error on a previously downloaded script, re-download the latest authoritative version from the collector endpoint: \`http://COLLECTOR_HOST:5000/api/v1/agents/download/install-agent.sh\`.
+- In current releases, all quote stripping is written with safe double-quoted sets: \`tr -d "\"'")\`.
+        `,
+        commands: [
+          { label: "Download Script", cmd: "curl -fsSL \"http://COLLECTOR_HOST:5000/api/v1/agents/download/install-agent.sh\" -o install-agent.sh", platform: "linux" },
+          { label: "Validate Bash Syntax (Read-Only)", cmd: "bash -n install-agent.sh", platform: "linux" },
+          { label: "Make Executable", cmd: "chmod +x install-agent.sh", platform: "linux" },
+          { label: "Execute Verified Installer", cmd: "sudo AGENTAUTHTOKEN=\"<TOKEN>\" ./install-agent.sh --host \"COLLECTOR_HOST\" --port 5000", platform: "linux" }
+        ],
+        relatedTopicIds: ["troubleshooting-library", "ts-http-401-registration", "ts-shell-differences-tokens", "install-linux"]
+      },
+      {
+        id: "ts-collector-connectivity",
+        title: "Article C: Collector Network Connectivity & VirtualBox Routing (Collector unreachable)",
+        badge: "Network Routing",
+        summary: "Diagnosing Collector unreachable, Kali Linux installation networking, VirtualBox Host-Only vs NAT routing, and port 5000 firewall rules.",
+        content: `
+### Symptoms
+- Agent installation fails with: \`curl: (7) Failed to connect to <HOST>: Connection refused\`
+- Installer hangs attempting to download the \`.deb\` package from port 5000.
+- Agent service logs report: \`httpx.ConnectError: [Errno 111] Connection refused\` or \`Network is unreachable\`.
+
+### How Endpoints Reach the Collector
+Endpoint agents transmit HTTP POST requests and WebSockets to the SOC Collector service on TCP port 5000. For an endpoint to communicate:
+1. The collector service must be bound to **\`0.0.0.0\`** (listening on all interfaces), not \`127.0.0.1\` (localhost only).
+2. The network adapter used by the endpoint must have an active IP route to the host's listening IP.
+3. Windows Firewall must allow inbound TCP port 5000 on the adapter's network profile (Private).
+
+### Lab Architecture: Host-Only vs. NAT (VirtualBox Reference Example)
+In a virtualized security testing lab, guest VMs (e.g. Kali Linux) interact with the host operating system:
+
+| Adapter Type | VM IP Range | Reachability to Host | Notes |
+| :--- | :--- | :--- | :--- |
+| **NAT** | \`10.0.2.15/24\` | VM can access external Internet, but host-to-guest and guest-to-host private port binding requires manual port forwarding. | Default VirtualBox adapter mode. |
+| **Host-Only Adapter** | \`192.168.56.0/24\` | Direct, bidirectional private network between Windows host and guest VMs. | **Recommended for SOC lab testing.** |
+
+> [!NOTE]
+> **Development Lab Reference Values:**
+> - Windows Host-Only Adapter IP: \`192.168.56.1\`
+> - Kali VM Host-Only IP: \`192.168.56.102\`
+> - Collector Port: \`5000\`
+> *(These IP addresses are lab-specific examples; adapt them to your subnet configuration)*
+
+#### Why Host Wi-Fi / LAN IP Fails in Host-Only Labs
+If your Kali VM is attached to a VirtualBox Host-Only Adapter (\`192.168.56.x\`), attempting to connect to the host's Wi-Fi IP (e.g., \`192.168.1.50\`) will fail because the VM has no routing gateway between the isolated host-only subnet and your home router. Always use the IP assigned to the host's **VirtualBox Host-Only Ethernet Adapter** (\`192.168.56.1\`).
+
+### Safe Diagnostic Commands
+
+1. **Inspect Network Interfaces on Linux Endpoint:**
+\`\`\`bash
+ip -br addr
+\`\`\`
+*(Verify the VM has an interface on the 192.168.56.0/24 subnet, e.g. eth0 or eth1)*
+
+2. **Test Collector Reachability from Endpoint:**
+\`\`\`bash
+curl -sS -o /dev/null -w "HTTP %{http_code}\n" http://COLLECTOR_HOST:5000/docs
+\`\`\`
+- **Expected Result:** \`HTTP 200\`
+- **Meaning:** HTTP 200 confirms reachability and TCP connectivity to the collector endpoint. It does **not** confirm agent authentication or event ingestion.
+
+3. **Check Collector Listener on Host (PowerShell):**
+\`\`\`powershell
+Get-NetTCPConnection -LocalPort 5000 -State Listen
+\`\`\`
+*(Verify LocalAddress is \`0.0.0.0\`. If it is \`127.0.0.1\`, remote VMs cannot connect)*
+
+4. **Test Port Handshake from Kali (Optional):**
+\`\`\`bash
+nc -zv 192.168.56.1 5000
+\`\`\`
+
+### Safe Fix & Governance
+- If port 5000 is listening but the VM receives Connection Refused, create a specific Windows Firewall rule for TCP 5000 scoped to the VirtualBox adapter:
+\`\`\`powershell
+New-NetFirewallRule -DisplayName "SOC Collector Port 5000" -Direction Inbound -LocalPort 5000 -Protocol TCP -Action Allow -Profile Private
+\`\`\`
+- **Never disable the Windows Firewall completely** or expose port 5000 or port 8000 to public untrusted networks as a troubleshooting workaround.
+        `,
+        commands: [
+          { label: "Inspect VM Network Interfaces", cmd: "ip -br addr", platform: "linux" },
+          { label: "Test Collector Reachability", cmd: "curl -sS -o /dev/null -w \"HTTP %{http_code}\\n\" http://192.168.56.1:5000/docs", platform: "linux" },
+          { label: "Verify Listening Socket on Host", cmd: "Get-NetTCPConnection -LocalPort 5000 -State Listen", platform: "windows" },
+          { label: "Add Scoped Firewall Inbound Rule", cmd: "New-NetFirewallRule -DisplayName \"SOC Collector Port 5000\" -Direction Inbound -LocalPort 5000 -Protocol TCP -Action Allow -Profile Private", platform: "windows" }
+        ],
+        relatedTopicIds: ["troubleshooting-library", "ts-http-401-registration", "ts-service-running-endpoint-offline"]
+      },
+      {
+        id: "ts-service-running-endpoint-offline",
+        title: "Article D: Service Running but Agent Offline (Heartbeat missing)",
+        badge: "Fleet State Drift",
+        summary: "Investigating Agent Offline, Heartbeat missing, four-stage lifecycle verification, and ordered 7-point recovery checklist.",
+        content: `
+### Symptoms
+- The system administrator verifies \`soc-agent.service\` is \`active (running)\` on Linux or \`SOCMonitorAgent\` is \`Running\` on Windows.
+- However, in the SOC Monitor dashboard under **Endpoint Management → Agents** (\`/agents\`), the agent remains in **OFFLINE** (Yellow) or **UNKNOWN** (Gray) status with Heartbeat missing.
+
+### The Four Distinct Lifecycle Stages
+An agent transitioning to a healthy, active state must successfully pass through four separate stages:
+
+\`\`\`text
+Stage 1: OS Service Starts
+  └─> Systemd / Windows SCM launches executable
+
+Stage 2: Agent Registers
+  └─> Enrolls with one-time token -> receives private agent UUID & auth secret
+
+Stage 3: Heartbeat Loop Operates
+  └─> Transmits periodic check-ins every 30-60s -> updates 'last_seen' in DB
+
+Stage 4: Telemetry Ingests
+  └─> Security events parsed -> normalized -> written to event store -> broadcast via WebSocket
+\`\`\`
+
+> [!IMPORTANT]
+> **Critical Rule:** Service status alone only proves **Stage 1**. An active process will remain \`active (running)\` even if Stage 2 failed with HTTP 401, Stage 3 cannot reach the database, or Stage 4 has zero events.
+
+### Ordered 7-Step Troubleshooting Checklist
+
+1. **Check Service Status:**
+   - Linux: \`sudo systemctl status soc-agent.service --no-pager\`
+   - Windows: \`Get-Service SOCMonitorAgent\`
+
+2. **Inspect Recent Service Logs for Hidden Failures:**
+   - Linux: \`sudo journalctl -u soc-agent.service -n 50 --no-pager\`
+   - Windows: \`Get-Content -Tail 50 "C:\\ProgramData\\SOCMonitorAgent\\agent.log"\`
+   - Look for registration rejections, token renewal errors, or heartbeat timeouts.
+
+3. **Confirm the Configured Collector Address:**
+   - Inspect \`/etc/soc-monitor-agent/agent.yml\` on Linux or \`C:\\ProgramData\\SOCMonitorAgent\\agent.yml\` on Windows.
+   - Verify the \`host:\` and \`port:\` parameters match the actual server address, not \`127.0.0.1\` or an unverified interface.
+
+4. **Verify Heartbeat Transmission:**
+   - Agents send heartbeats every 60 seconds by default.
+   - Look for \`Heartbeat sent: 200 OK\` in agent logs.
+   - If heartbeats fail with 401/403, the private agent token stored in \`/var/lib/soc-monitor-agent/state\` may be out of sync.
+
+5. **Verify Hostname and Agent Identity:**
+   - Check the hostname reported in logs. If multiple endpoints share identical cloned hostnames or identical MAC addresses, heartbeats may collide.
+
+6. **Inspect Endpoint Last-Seen Time in Dashboard:**
+   - Navigate to \`/agents\`. Inspect the **Last Seen** column.
+   - SOC Monitor marks an agent **OFFLINE** if \`last_seen\` is older than **5 minutes** (300 seconds).
+
+7. **Verify Collector-to-Backend Database Path:**
+   - If the agent reports \`Heartbeat sent: 200 OK\` but the dashboard still shows OFFLINE:
+     - Verify the Collector (port 5000) and Backend (port 8000) are pointing to the exact same PostgreSQL database.
+     - Verify WebSocket connection status in the dashboard top navigation bar is green (\`CONNECTED\`).
+        `,
+        commands: [
+          { label: "Inspect Linux Service Logs", cmd: "sudo journalctl -u soc-agent.service -n 50 --no-pager", platform: "linux" },
+          { label: "Inspect Linux Config File", cmd: "sudo cat /etc/soc-monitor-agent/agent.yml", platform: "linux" },
+          { label: "Inspect Windows Service Logs", cmd: "Get-Content -Tail 50 \"C:\\ProgramData\\SOCMonitorAgent\\agent.log\"", platform: "windows" },
+          { label: "Inspect Windows Config File", cmd: "Get-Content \"C:\\ProgramData\\SOCMonitorAgent\\agent.yml\"", platform: "windows" }
+        ],
+        relatedTopicIds: ["troubleshooting-library", "ts-http-401-registration", "ts-linux-events-missing", "hosts-vs-agents"]
+      },
+      {
+        id: "ts-linux-events-missing",
+        title: "Article E: Linux Events Missing from Dashboard (Events not appearing)",
+        badge: "Ingestion Diagnostics",
+        summary: "Diagnosing Events not appearing, systemd-journal group permissions, logger test events, and live ingestion pipeline.",
+        content: `
+### Symptoms
+- The Linux agent is **ONLINE** (green indicator in \`/agents\`), and heartbeats are arriving every 60 seconds.
+- However, navigating to **Linux → Live Events** (\`/live-events?os=linux\`) or **Linux Logs** (\`/linux-logs\`) shows Events not appearing (empty table or zero new records).
+
+### Root Cause Analysis
+Successful agent registration and heartbeat check-ins only prove the management channel is healthy. Telemetry ingestion is a separate data pipeline. Events may be missing because:
+1. **No New Security Activity:** Linux systems generate very few security events when idle.
+2. **Journald Permissions:** The service user (\`soc-agent\`) lacks permission to read binary systemd journal files in \`/var/log/journal\`.
+3. **Log Mode Disabled:** \`journald_enabled\` is set to \`false\` in \`/etc/soc-monitor-agent/agent.yml\`.
+4. **Active UI Filter:** An active search filter or date range on the dashboard excludes the incoming events.
+
+### Diagnostic & Verification Procedure
+
+1. **Verify Journald Group Membership:**
+\`\`\`bash
+id -Gn soc-agent 2>/dev/null || id -Gn
+\`\`\`
+The agent process user must belong to \`systemd-journal\` or \`adm\` to read system logs without root privileges.
+\`\`\`bash
+sudo usermod -aG systemd-journal,adm soc-agent
+\`\`\`
+
+2. **Verify Agent Configuration:**
+\`\`\`bash
+sudo grep -E "journald_enabled|log_paths" /etc/soc-monitor-agent/agent.yml
+\`\`\`
+Ensure \`journald_enabled: true\` on systemd-based Linux systems.
+
+3. **Generate a Harmless Local Test Event:**
+Generate a synthetic test message directly into the system log using the standard Linux \`logger\` utility:
+\`\`\`bash
+logger "SOC Monitor test event from Kali Linux"
+\`\`\`
+
+4. **Locate the Test Event in Dashboard:**
+   - Open **Linux → Live Events** (\`/live-events?os=linux\`).
+   - If the WebSocket is connected, the new event should stream in within 5–10 seconds.
+   - Alternatively, open **Linux → Logs** (\`/linux-logs\`) and search for \`SOC Monitor test event\`.
+
+5. **If the Test Event Does Not Appear:**
+   - Verify that the local system log captured the message:
+     \`\`\`bash
+     sudo journalctl -n 10 --no-pager | grep "SOC Monitor test event"
+     \`\`\`
+   - Check agent logs for batch submission errors:
+     \`\`\`bash
+     sudo journalctl -u soc-agent.service -n 30 --no-pager | grep -iE "event|batch|error"
+     \`\`\`
+   - Verify the Collector is accepting events on \`/api/v1/collector/events\`.
+        `,
+        commands: [
+          { label: "Generate Harmless Test Log", cmd: "logger \"SOC Monitor test event from Kali Linux\"", platform: "linux" },
+          { label: "Verify Test Message in Local Journal", cmd: "sudo journalctl -n 10 --no-pager | grep \"SOC Monitor test event\"", platform: "linux" },
+          { label: "Check Group Permissions", cmd: "id -Gn soc-agent", platform: "linux" },
+          { label: "Inspect Event Ingestion Logs", cmd: "sudo journalctl -u soc-agent.service -n 40 --no-pager | grep -iE \"batch|event\"", platform: "linux" }
+        ],
+        relatedTopicIds: ["troubleshooting-library", "ts-service-running-endpoint-offline", "linux-overview-logs"]
+      },
+      {
+        id: "ts-shell-differences-tokens",
+        title: "Article F: Shell Differences and Safe Token Input (Zsh versus Bash)",
+        badge: "Security & Governance",
+        summary: "Resolving Zsh versus Bash interactive shell errors, read -p coprocess incompatibilities, Enrollment token security, and avoiding history leaks.",
+        content: `
+### Symptoms & Shell Incompatibilities
+When pasting installation one-liners into modern interactive shells (such as default Kali Linux **Zsh** or custom user shells):
+\`\`\`text
+read: -p: no coprocess
+\`\`\`
+or the terminal displays syntax errors regarding options like \`-rsp\`.
+
+### Shell Implementation Disparities: Bash vs. Zsh
+- In **Bash**, \`read -p "Prompt: " VAR\` prints a prompt string and stores input in \`$VAR\`. Adding \`-s\` conceals typed characters.
+- In **Zsh**, \`read -p\` interprets \`-p\` as reading from an external *coprocess*. To specify a prompt in Zsh, the syntax is \`read "VAR?Prompt: "\` or \`read -s "VAR?Prompt: "\`.
+
+### Safe Interactive Token Input Strategy
+To avoid shell-specific \`read\` errors while preventing sensitive tokens from being written to plain-text shell history files (\`~/.bash_history\`, \`~/.zsh_history\`):
+
+#### Method 1: Prefix Command with Space (History Bypass)
+In most Linux shells with \`HISTCONTROL=ignorespace\` enabled, prefixing a command with a leading space excludes it from history:
+\`\`\`bash
+ sudo AGENTAUTHTOKEN="<PASTE_TOKEN>" ./install-agent.sh --host "COLLECTOR_HOST" --port 5000
+\`\`\`
+
+#### Method 2: Let the Installer Prompt Interactively
+Run the installer directly without the environment variable:
+\`\`\`bash
+sudo ./install-agent.sh --host "COLLECTOR_HOST" --port 5000
+\`\`\`
+The installer script itself executes strictly in **Bash** (\`#!/usr/bin/env bash\`), ensuring that internal \`read -rsp\` prompts execute with standard Bash semantics regardless of your parent shell. The prompt conceals input, prevents terminal echoing, and keeps the token completely out of shell history.
+
+### Process Environment Hygiene & Traps
+In \`artifacts/install-agent.sh\`, a safety exit trap automatically wipes tokens upon script completion or termination:
+\`\`\`bash
+cleanup() {
+    unset AGENTAUTHTOKEN 2>/dev/null || true
+    unset AUTH_TOKEN 2>/dev/null || true
+}
+trap cleanup EXIT INT TERM
+\`\`\`
+Similarly, in Windows PowerShell:
+\`\`\`powershell
+$env:AGENTAUTHTOKEN = Read-Host "Paste enrollment token"
+try {
+    .\\install-agent.ps1 -CollectorHost "192.168.56.1" -CollectorPort 5000
+} finally {
+    Remove-Item Env:AGENTAUTHTOKEN -ErrorAction SilentlyContinue
+}
+\`\`\`
+
+> [!CAUTION]
+> **Secret Governance:** Environment variables are not a substitute for enterprise secret management. Privileged users can inspect process environments via \`/proc/<pid>/environ\`. Never paste tokens into public bug reports, GitHub issues, Discord/Slack channels, or screenshots.
+        `,
+        commands: [
+          { label: "Interactive Hidden Prompt Install (Universal)", cmd: "sudo ./install-agent.sh --host \"COLLECTOR_HOST\" --port 5000", platform: "linux" },
+          { label: "Clear Token from Shell Environment", cmd: "unset AGENTAUTHTOKEN AUTH_TOKEN", platform: "linux" },
+          { label: "Clear Token from PowerShell Environment", cmd: "Remove-Item Env:AGENTAUTHTOKEN -ErrorAction SilentlyContinue", platform: "windows" }
+        ],
+        relatedTopicIds: ["troubleshooting-library", "ts-http-401-registration", "safe-ops-dos-and-donts", "safe-ops-guidelines"]
       }
     ]
   },
@@ -808,8 +1256,48 @@ Use the interactive troubleshooting finder below or search by symptom keyword (e
     title: "P. Security & Safe Operations",
     shortTitle: "Security & Safety",
     icon: "Lock",
-    description: "Enrollment token security, least privilege, safe diagnostics, and sensitive log handling.",
+    description: "Enrollment token security, user-facing Do's and Don'ts, least privilege, safe diagnostics, and sensitive log handling.",
     topics: [
+      {
+        id: "safe-ops-dos-and-donts",
+        title: "User-Facing Do's and Don'ts Guide",
+        badge: "Operational Checklist",
+        summary: "Essential rules for operational security, agent lifecycle management, and reliable incident diagnostics.",
+        content: `
+### Operational Best Practices & Safety Standards
+
+Adhere to this definitive Do's and Don'ts checklist when installing, maintaining, and troubleshooting SOC Monitor agents and telemetry pipelines:
+
+---
+
+### What You Should Do (DO)
+
+- **Do Verify Reachability First:** Test network connectivity to the Collector IP and port (\`http://COLLECTOR_HOST:5000/docs\`) from the endpoint before starting installation.
+- **Do Validate Script Syntax:** Run \`bash -n install-agent.sh\` on downloaded shell scripts to verify syntax integrity before execution.
+- **Do Use Fresh Enrollment Tokens:** Generate a new token in the **Add Endpoint** modal whenever a token has expired, been consumed, or rejected with HTTP 401.
+- **Do Inspect Service Logs Directly:** Use \`journalctl -u soc-agent.service\` (Linux) or \`Get-Content agent.log\` (Windows) after installation to verify genuine registration success.
+- **Do Respect the Heartbeat Interval:** Wait at least 60 seconds (the default heartbeat cycle) before deciding whether an endpoint is updating its last-seen state.
+- **Do Evaluate Lifecycle Stages Separately:** Confirm service startup, agent registration, heartbeat health, and telemetry ingestion as separate stages.
+- **Do Redact Secrets in Diagnostic Exports:** Remove or mask tokens, database URLs, passwords, and private identifiers before sharing logs.
+- **Do Use the Official Uninstaller:** Run \`uninstall-agent.sh\` or \`uninstall-agent.ps1\` to cleanly stop services and preserve or remove local identities.
+- **Do Preserve State During Initial Diagnosis:** Keep existing configuration files and agent identities intact while investigating network or token issues.
+
+---
+
+### What You Should Avoid (DON'T)
+
+- **Don't Reuse Enrollment Tokens:** Never attempt to enroll multiple agents or retry failed installations with an already-consumed token.
+- **Don't Assume Service Status Proves Health:** Never assume an active service status means the endpoint is registered or sending logs.
+- **Don't Repeatedly Reinstall Without Reading Logs:** Avoid uninstalling and reinstalling in a loop without diagnosing the exact error in service logs.
+- **Don't Delete Database Records or State Prematurely:** Do not wipe \`/var/lib/soc-monitor-agent\` or drop database tables as an initial troubleshooting step.
+- **Don't Point Agents to Unverified Addresses:** Do not change collector addresses to arbitrary IPs without verifying route reachability.
+- **Don't Disable System Firewalls:** Never disable the host firewall or expose private backend ports (\`8000\`, \`5432\`) publicly to work around network issues.
+- **Don't Leak Tokens in Public Channels:** Never post enrollment codes, JWT keys, or database credentials in tickets, chat rooms, or screenshots.
+- **Don't Execute Destructive Internet Snippets:** Never run unverified shell commands found on web forums that use forced cleanup flags or raw file overrides.
+- **Don't Assume Global Event Counts Prove Endpoint Health:** Never assume non-zero dashboard event totals mean a specific newly enrolled endpoint is sending events.
+        `,
+        relatedTopicIds: ["safe-ops-guidelines", "troubleshooting-library", "ts-http-401-registration"]
+      },
       {
         id: "safe-ops-guidelines",
         title: "Safe Operations & Token Governance",
@@ -823,7 +1311,7 @@ Use the interactive troubleshooting finder below or search by symptom keyword (e
    - Use one-time codes whenever possible; expired or used tokens are automatically rejected.
 
 2. **Least Privilege Agent Execution:**
-   - The Windows Agent service runs under \`LocalSystem\` to access the security audit event log; protect its binary and configuration directory (\`C:\\Program Files\\SOCAgent\`) with strict ACLs.
+   - The Windows Agent service runs under \`LocalSystem\` to access the security audit event log; protect its binary and configuration directory (\`C:\\ProgramData\\SOCMonitorAgent\`) with strict ACLs.
    - The Linux Agent only requires read access to systemd journal files (\`adm\` / \`systemd-journal\` group).
 
 3. **Safe Diagnostic Policies:**
@@ -831,7 +1319,7 @@ Use the interactive troubleshooting finder below or search by symptom keyword (e
    - Always run safe, read-only diagnostic commands first.
    - Mask credentials, tokens, and PII when exporting logs for technical review.
         `,
-        relatedTopicIds: ["hosts-vs-agents", "troubleshooting-library"]
+        relatedTopicIds: ["safe-ops-dos-and-donts", "hosts-vs-agents", "troubleshooting-library"]
       }
     ]
   },
@@ -1434,6 +1922,156 @@ export const TROUBLESHOOTING_LIBRARY: TroubleshootingItem[] = [
     },
     verification: "Agent parses config without ScannerError / ParserError.",
     escalation: "Validate config.yaml with yamllint or Python yaml.safe_load."
+  },
+  {
+    id: "ts-26",
+    symptom: "Agent registration fails with HTTP 401 Unauthorized",
+    platform: "collector",
+    possibleCauses: [
+      "The one-time enrollment token has expired (past 24h lifespan)",
+      "The token has already been consumed by an existing agent registration",
+      "The token was truncated or modified during copy/paste",
+      "Target OS mismatch between token generation and target machine"
+    ],
+    diagnosticSteps: [
+      { label: "Inspect Linux Journalctl for 401 Rejection", command: "sudo journalctl -u soc-agent.service -n 50 --no-pager | grep -iE \"401|invalid|expired\"", explanation: "Confirm whether the server rejected the token with HTTP 401." },
+      { label: "Inspect Windows Agent Log for Rejection", command: "Select-String -Path 'C:\\ProgramData\\SOCMonitorAgent\\agent.log' -Pattern '401|rejected'", explanation: "Search for token rejection in Windows agent log." }
+    ],
+    safeFix: {
+      title: "Generate a Fresh One-Time Enrollment Token",
+      steps: [
+        "In the SOC Monitor dashboard header, click '+ Add Endpoint'.",
+        "Select the appropriate operating system (Linux or Windows).",
+        "Copy the newly generated one-time token.",
+        "Re-run the installer supplying the new token via AGENTAUTHTOKEN or secure prompt."
+      ],
+      command: "sudo AGENTAUTHTOKEN=\"<FRESH_TOKEN>\" ./install-agent.sh --host \"COLLECTOR_HOST\" --port 5000"
+    },
+    verification: "sudo journalctl -u soc-agent.service -n 20 --no-pager shows 'Agent registered successfully'.",
+    escalation: "Check collector service console logs on port 5000 to verify token validation reason."
+  },
+  {
+    id: "ts-27",
+    symptom: "Linux installer fails: syntax error near unexpected token '(' while looking for matching ')'",
+    platform: "linux",
+    possibleCauses: [
+      "Unbalanced or incorrectly escaped single quotes inside installer quote-stripping pipeline",
+      "Stale or truncated installer script downloaded from older collector build"
+    ],
+    diagnosticSteps: [
+      { label: "Validate Script Syntax (No Execution)", command: "bash -n install-agent.sh", explanation: "Verify shell syntax without executing any code." },
+      { label: "Verify Endpoint Script Content", command: "curl -sS http://COLLECTOR_HOST:5000/api/v1/agents/download/install-agent.sh | bash -n", explanation: "Test the live download endpoint syntax directly." }
+    ],
+    safeFix: {
+      title: "Download Verified Installer & Validate Syntax",
+      steps: [
+        "Re-download the authoritative installer script from the collector.",
+        "Run bash -n install-agent.sh to verify exit code 0.",
+        "Execute the verified script with sudo."
+      ],
+      command: "curl -fsSL \"http://COLLECTOR_HOST:5000/api/v1/agents/download/install-agent.sh\" -o install-agent.sh && bash -n install-agent.sh && chmod +x install-agent.sh && sudo AGENTAUTHTOKEN=\"<TOKEN>\" ./install-agent.sh --host \"COLLECTOR_HOST\" --port 5000"
+    },
+    verification: "bash -n install-agent.sh returns exit code 0 with no errors.",
+    escalation: "Inspect artifacts/install-agent.sh on host for tr -d quote formatting."
+  },
+  {
+    id: "ts-28",
+    symptom: "Kali Linux / VM cannot reach Collector on port 5000 (Host-Only vs NAT mismatch)",
+    platform: "network",
+    possibleCauses: [
+      "Kali VM is attempting to reach host Wi-Fi/LAN IP instead of VirtualBox Host-Only Adapter IP (192.168.56.1)",
+      "Collector is bound to 127.0.0.1 instead of 0.0.0.0",
+      "Windows Firewall blocking inbound port 5000 on VirtualBox private adapter"
+    ],
+    diagnosticSteps: [
+      { label: "Inspect VM Interface IP", command: "ip -br addr", explanation: "Verify VM is assigned an IP in the 192.168.56.0/24 subnet (e.g. 192.168.56.102)." },
+      { label: "Test Collector API Reachability", command: "curl -sS -o /dev/null -w \"HTTP %{http_code}\\n\" http://192.168.56.1:5000/docs", explanation: "Verify HTTP 200 is returned from collector docs." }
+    ],
+    safeFix: {
+      title: "Point Agent to VirtualBox Host-Only Gateway IP (192.168.56.1)",
+      steps: [
+        "Use 192.168.56.1 as the collector host argument.",
+        "Ensure collector on Windows is running with --host 0.0.0.0 --port 5000.",
+        "Allow inbound TCP 5000 on Windows Firewall for the VirtualBox network adapter."
+      ],
+      command: "curl -sS -o /dev/null -w \"HTTP %{http_code}\\n\" http://192.168.56.1:5000/docs"
+    },
+    verification: "curl from Kali VM returns HTTP 200.",
+    escalation: "In PowerShell run: Get-NetTCPConnection -LocalPort 5000 -State Listen"
+  },
+  {
+    id: "ts-29",
+    symptom: "Agent service is active but dashboard shows endpoint as OFFLINE",
+    platform: "general",
+    possibleCauses: [
+      "Service started (Stage 1) but registration failed (Stage 2) with HTTP 401",
+      "Heartbeat interval exceeded the 5-minute timeout window (Stage 3 failure)",
+      "Collector and Backend are pointing to different database connections"
+    ],
+    diagnosticSteps: [
+      { label: "Check Linux Daemon Logs", command: "sudo journalctl -u soc-agent.service -n 50 --no-pager", explanation: "Inspect heartbeat transmission responses (200 OK vs 401/403)." },
+      { label: "Check Windows Agent Logs", command: "Get-Content -Tail 50 \"C:\\ProgramData\\SOCMonitorAgent\\agent.log\"", explanation: "Inspect Windows agent heartbeat status." }
+    ],
+    safeFix: {
+      title: "Diagnose Four-Stage Agent Lifecycle",
+      steps: [
+        "Inspect service logs to confirm genuine registration success beyond process startup.",
+        "Verify heartbeat loop transmits every 60 seconds.",
+        "Ensure collector and backend services share the same database URL."
+      ],
+      command: "sudo systemctl restart soc-agent.service && sudo journalctl -u soc-agent.service -f"
+    },
+    verification: "Within 60 seconds, /agents status column changes to ONLINE (Green).",
+    escalation: "Query backend /api/v1/agents/ endpoint directly to verify last_seen timestamp."
+  },
+  {
+    id: "ts-30",
+    symptom: "Linux agent is ONLINE but no security events appear in Live Events or Linux Logs",
+    platform: "linux",
+    possibleCauses: [
+      "Endpoint has generated no new authentication or system events while idle",
+      "soc-agent user lacks read permissions on systemd journal (/var/log/journal)",
+      "journald_enabled is set to false in /etc/soc-monitor-agent/agent.yml"
+    ],
+    diagnosticSteps: [
+      { label: "Generate Harmless Local Test Log", command: "logger \"SOC Monitor test event from Kali Linux\"", explanation: "Write a test entry into the local syslog / journal." },
+      { label: "Verify Message in Local Journal", command: "sudo journalctl -n 10 --no-pager | grep \"SOC Monitor test event\"", explanation: "Confirm the message was written locally." },
+      { label: "Check Ingestion Log in Agent", command: "sudo journalctl -u soc-agent.service -n 30 --no-pager | grep -iE \"batch|event\"", explanation: "Check if the agent shipped the batch." }
+    ],
+    safeFix: {
+      title: "Add soc-agent User to Journal Group & Verify Ingestion",
+      steps: [
+        "Ensure soc-agent user is in systemd-journal group: sudo usermod -aG systemd-journal soc-agent",
+        "Generate a test event using the logger command.",
+        "Check Linux Live Events in the dashboard (/live-events?os=linux)."
+      ],
+      command: "logger \"SOC Monitor test event from Kali Linux\""
+    },
+    verification: "Test event appears in /live-events or /linux-logs within 10 seconds.",
+    escalation: "Inspect collector terminal for incoming POST /api/v1/collector/events payloads."
+  },
+  {
+    id: "ts-31",
+    symptom: "Interactive shell error on token input: read: -p: no coprocess (Zsh vs Bash disparity)",
+    platform: "linux",
+    possibleCauses: [
+      "Executing Bash-specific read -p syntax in modern default Zsh shell (Kali Linux)",
+      "Pasting multi-command one-liner with conflicting shell options"
+    ],
+    diagnosticSteps: [
+      { label: "Check Current Shell", command: "echo $0 && echo $SHELL", explanation: "Determine if current interactive shell is /usr/bin/zsh or /bin/bash." }
+    ],
+    safeFix: {
+      title: "Run Installer Interactively or Prefix Command with Space",
+      steps: [
+        "Run the installer directly: sudo ./install-agent.sh --host \"COLLECTOR_HOST\" --port 5000",
+        "The script runs internally under Bash (#!/usr/bin/env bash) and uses masked prompt without shell history leakage.",
+        "Alternatively, in Bash/Zsh prefix the export with a space:  sudo AGENTAUTHTOKEN=\"<TOKEN>\" ./install-agent.sh ..."
+      ],
+      command: "sudo ./install-agent.sh --host \"COLLECTOR_HOST\" --port 5000"
+    },
+    verification: "Installer prompts securely for token: 'Enrollment Token (hidden): '.",
+    escalation: "Explicitly invoke under Bash: bash ./install-agent.sh --host \"COLLECTOR_HOST\""
   }
 ];
 
