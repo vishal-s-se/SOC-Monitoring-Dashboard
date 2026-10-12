@@ -10,6 +10,8 @@ export function EventDetailsModal({ event, onClose }: { event: any, onClose: () 
   const [context, setContext] = useState<any | null>(null);
   const [contextLoading, setContextLoading] = useState(false);
   const [showContext, setShowContext] = useState(false);
+  const [idCopied, setIdCopied] = useState(false);
+  const [metaCopied, setMetaCopied] = useState(false);
 
   useEffect(() => {
     if (!event || !showContext) return;
@@ -30,63 +32,100 @@ export function EventDetailsModal({ event, onClose }: { event: any, onClose: () 
   if (!event) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overflow-x-hidden bg-black/50 p-4">
-      <div className="relative w-full max-w-4xl max-h-[90vh] bg-gray-900 border border-gray-700 rounded-lg shadow-xl flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overflow-x-hidden bg-black/70 backdrop-blur-sm p-3 sm:p-4 md:p-6">
+      <div className="relative w-full max-w-4xl max-h-[90vh] bg-gray-900 border border-gray-700 rounded-lg shadow-2xl flex flex-col overflow-hidden min-w-0">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-gray-800">
-          <div className="flex items-center space-x-4">
-            <h3 className="text-lg font-semibold text-white">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 sm:p-5 border-b border-gray-800 bg-gray-900 sticky top-0 z-10 gap-3 min-w-0">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 min-w-0">
+            <h3 className="text-lg font-semibold text-white tracking-tight shrink-0">
               Event Details
-              <span className="ml-3 text-sm font-normal text-gray-400">{event.event_id}</span>
             </h3>
+            {event.event_id && (
+              <div className="flex items-center gap-1.5 text-xs text-gray-400 min-w-0 bg-gray-800/80 px-2 py-1 rounded border border-gray-700/60 max-w-full sm:max-w-xs md:max-w-sm">
+                <span className="text-gray-500 font-semibold shrink-0">ID:</span>
+                <span className="font-mono text-gray-300 truncate" title={event.event_id}>
+                  {event.event_id}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(event.event_id);
+                    setIdCopied(true);
+                    setTimeout(() => setIdCopied(false), 2000);
+                  }}
+                  className="text-gray-400 hover:text-white p-0.5 shrink-0 transition-colors"
+                  title="Copy Event ID"
+                >
+                  {idCopied ? (
+                    <span className="text-[10px] text-green-400 font-medium">Copied</span>
+                  ) : (
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2" strokeWidth="2"></rect>
+                      <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" strokeWidth="2"></path>
+                    </svg>
+                  )}
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center flex-wrap gap-2 shrink-0 self-end sm:self-auto">
             <button
               onClick={() => setShowInvestigateModal(true)}
-              className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded"
+              className="text-xs bg-blue-600 hover:bg-blue-700 text-white font-medium px-2.5 py-1.5 rounded transition-colors inline-flex items-center gap-1 shadow-sm"
             >
-              Add to Investigation
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+              </svg>
+              <span>Add to Investigation</span>
             </button>
             <a
               href={`/attack-timeline?search=${encodeURIComponent(event.event_id || '')}`}
               onClick={onClose}
-              className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1 rounded transition-colors inline-flex items-center space-x-1"
+              className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-2.5 py-1.5 rounded transition-colors inline-flex items-center gap-1 shadow-sm"
             >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
               <span>View in Timeline</span>
             </a>
             <button
               onClick={() => setShowContext(v => !v)}
-              className={`text-xs px-2.5 py-1 rounded transition-colors ${showContext ? 'bg-purple-700 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'}`}
+              className={`text-xs font-medium px-2.5 py-1.5 rounded transition-colors inline-flex items-center gap-1 ${showContext ? 'bg-purple-700 text-white' : 'bg-gray-800 hover:bg-gray-700 text-gray-300'}`}
             >
-              {showContext ? 'Hide Context' : 'Observed Context'}
+              <span>{showContext ? 'Hide Context' : 'Observed Context'}</span>
+            </button>
+            <button
+              onClick={onClose}
+              className="p-1.5 text-gray-400 hover:text-white bg-gray-800 hover:bg-gray-700 rounded transition-colors ml-1"
+              title="Close modal"
+            >
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd"></path>
+              </svg>
             </button>
           </div>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-white bg-gray-800 hover:bg-gray-700 rounded-lg text-sm p-1.5"
-          >
-            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd"></path>
-            </svg>
-          </button>
         </div>
 
         {/* Content */}
-        <div className="p-6 overflow-y-auto space-y-6">
+        <div className="p-4 sm:p-6 overflow-y-auto overflow-x-hidden space-y-6 flex-1 min-w-0">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div>
+            <div className="min-w-0">
               <p className="text-xs text-gray-500 uppercase">Timestamp</p>
-              <p className="text-sm text-gray-200 font-medium">{new Date(event.timestamp).toLocaleString()}</p>
+              <p className="text-sm text-gray-200 font-medium truncate" title={new Date(event.timestamp).toLocaleString()}>{new Date(event.timestamp).toLocaleString()}</p>
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-xs text-gray-500 uppercase">Severity</p>
               <div className="mt-1"><SeverityBadge severity={event.severity || 'INFO'} /></div>
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-xs text-gray-500 uppercase">Host</p>
               {event.hostname ? (
                 <Link
                   href={`/host-investigation?host=${encodeURIComponent(event.hostname)}`}
                   onClick={onClose}
-                  className="text-sm text-blue-400 hover:text-blue-300 hover:underline font-medium"
+                  className="text-sm text-blue-400 hover:text-blue-300 hover:underline font-medium truncate block"
+                  title={event.hostname}
                 >
                   {event.hostname}
                 </Link>
@@ -94,9 +133,9 @@ export function EventDetailsModal({ event, onClose }: { event: any, onClose: () 
                 <p className="text-sm text-gray-200 font-medium">N/A</p>
               )}
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-xs text-gray-500 uppercase">Agent ID</p>
-              <p className="text-sm text-gray-200 font-medium">{event.agent_id || 'N/A'}</p>
+              <p className="text-sm text-gray-200 font-medium truncate">{event.agent_id || 'N/A'}</p>
             </div>
           </div>
 
@@ -287,10 +326,27 @@ export function EventDetailsModal({ event, onClose }: { event: any, onClose: () 
           )}
 
           {event.metadata_ && Object.keys(event.metadata_).length > 0 && (
-            <div className="border-t border-gray-800 pt-4">
-              <h4 className="text-sm font-semibold text-gray-300 mb-3">Metadata Payload</h4>
-              <div className="bg-gray-950 p-4 rounded border border-gray-800 overflow-x-auto">
-                <pre className="text-xs text-gray-300 font-mono">
+            <div className="border-t border-gray-800 pt-4 space-y-2">
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-semibold text-gray-300">Metadata Payload</h4>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(JSON.stringify(event.metadata_, null, 2));
+                    setMetaCopied(true);
+                    setTimeout(() => setMetaCopied(false), 2000);
+                  }}
+                  className="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white px-2.5 py-1 rounded transition-colors inline-flex items-center gap-1.5"
+                >
+                  {metaCopied ? (
+                    <span className="text-green-400 font-medium">Copied!</span>
+                  ) : (
+                    <span>Copy Metadata</span>
+                  )}
+                </button>
+              </div>
+              <div className="bg-gray-950 p-4 rounded border border-gray-800 overflow-hidden">
+                <pre className="text-xs text-gray-300 font-mono whitespace-pre-wrap break-all sm:break-words overflow-auto max-h-60">
                   {JSON.stringify(event.metadata_, null, 2)}
                 </pre>
               </div>
