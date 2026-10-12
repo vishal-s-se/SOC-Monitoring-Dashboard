@@ -45,80 +45,90 @@ export function RawLogDetailsModal({ log, onClose }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overflow-x-hidden bg-black/70 backdrop-blur-sm p-3 sm:p-4 md:p-6">
-      <div className="bg-[#1e1e24] border border-gray-800 rounded-lg w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden min-w-0">
-        {/* Header & Action Toolbar */}
-        <div className="p-4 sm:p-5 border-b border-gray-800 bg-[#1e1e24] sticky top-0 z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-3 min-w-0">
-          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 min-w-0">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <h2 className="text-lg sm:text-xl font-semibold text-white tracking-tight shrink-0">
-                Raw Log Evidence
-              </h2>
-              {log.id !== undefined && (
-                <span className="px-2 py-0.5 rounded text-xs font-mono font-medium bg-gray-800 text-blue-400 border border-gray-700/80 shrink-0">
-                  Record #{log.id}
-                </span>
+      <div 
+        className="bg-[#1e1e24] border border-gray-800 rounded-lg max-h-[90vh] flex flex-col shadow-2xl overflow-hidden min-w-0"
+        style={{ width: 'min(75vw, 1400px)', minWidth: 'min(100%, 360px)' }}
+      >
+        {/* Header & Action Toolbar - Responsive Grid Layout */}
+        <div className="p-4 sm:p-5 border-b border-gray-800 bg-[#1e1e24] sticky top-0 z-10 min-w-0">
+          <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_auto] gap-3 items-start min-w-0">
+            {/* Left Section: Title, Record ID, and Event Identifier */}
+            <div className="min-w-0 flex flex-col gap-1.5">
+              <div className="flex items-center gap-2.5 flex-wrap min-w-0">
+                <h2 className="text-lg sm:text-xl font-semibold text-white tracking-tight shrink-0">
+                  Raw Log Evidence
+                </h2>
+                {log.id !== undefined && (
+                  <span className="px-2 py-0.5 rounded text-xs font-mono font-medium bg-gray-800 text-blue-400 border border-gray-700/80 shrink-0">
+                    Record #{log.id}
+                  </span>
+                )}
+              </div>
+
+              {log.event_identifier && (
+                <div className="flex items-start gap-1.5 text-xs text-gray-400 min-w-0 bg-gray-900/60 px-2.5 py-1.5 rounded border border-gray-800">
+                  <span className="text-gray-500 font-semibold shrink-0 mt-0.5">ID:</span>
+                  <span 
+                    className="font-mono text-gray-300 break-all select-all flex-1 min-w-0"
+                    style={{ overflowWrap: 'anywhere' }}
+                    title={log.event_identifier}
+                  >
+                    {log.event_identifier}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleCopy(log.event_identifier, setIdCopied)}
+                    className="text-gray-400 hover:text-white p-0.5 shrink-0 transition-colors rounded hover:bg-gray-800"
+                    title="Copy Event Identifier"
+                  >
+                    {idCopied ? (
+                      <span className="text-[10px] text-green-400 font-medium">Copied!</span>
+                    ) : (
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2" strokeWidth="2"></rect>
+                        <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" strokeWidth="2"></path>
+                      </svg>
+                    )}
+                  </button>
+                </div>
               )}
             </div>
 
-            {log.event_identifier && (
-              <div className="flex items-center gap-1.5 text-xs text-gray-400 min-w-0 bg-gray-900/60 px-2 py-1 rounded border border-gray-800 max-w-full sm:max-w-xs md:max-w-sm">
-                <span className="text-gray-500 font-semibold shrink-0">ID:</span>
-                <span className="font-mono text-gray-300 truncate" title={log.event_identifier}>
-                  {log.event_identifier}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => handleCopy(log.event_identifier, setIdCopied)}
-                  className="text-gray-400 hover:text-white p-0.5 shrink-0 transition-colors"
-                  title="Copy Event Identifier"
-                >
-                  {idCopied ? (
-                    <span className="text-[10px] text-green-400 font-medium">Copied</span>
-                  ) : (
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2" strokeWidth="2"></rect>
-                      <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" strokeWidth="2"></path>
-                    </svg>
-                  )}
-                </button>
-              </div>
-            )}
-          </div>
+            {/* Right Section: Action Buttons and Close - Guaranteed Inside Modal Boundary */}
+            <div className="flex items-center flex-wrap gap-2 shrink-0 justify-start md:justify-end">
+              <button
+                type="button"
+                onClick={() => setShowInvestigateModal(true)}
+                className="text-xs bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-medium px-3 py-1.5 rounded transition-colors inline-flex items-center gap-1.5 shadow-sm whitespace-nowrap"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+                </svg>
+                <span>Add to Investigation</span>
+              </button>
 
-          {/* Action Toolbar */}
-          <div className="flex items-center flex-wrap gap-2 shrink-0 self-end sm:self-auto">
-            <button
-              type="button"
-              onClick={() => setShowInvestigateModal(true)}
-              className="text-xs bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-medium px-3 py-1.5 rounded transition-colors inline-flex items-center gap-1.5 shadow-sm"
-            >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
-              </svg>
-              <span>Add to Investigation</span>
-            </button>
+              <a
+                href={`/attack-timeline?search=${encodeURIComponent(log.event_identifier || String(log.id || ''))}`}
+                onClick={onClose}
+                className="text-xs bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-medium px-3 py-1.5 rounded transition-colors inline-flex items-center gap-1.5 shadow-sm whitespace-nowrap"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+                <span>View Timeline Context</span>
+              </a>
 
-            <a
-              href={`/attack-timeline?search=${encodeURIComponent(log.event_identifier || String(log.id || ''))}`}
-              onClick={onClose}
-              className="text-xs bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-medium px-3 py-1.5 rounded transition-colors inline-flex items-center gap-1.5 shadow-sm"
-            >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
-              <span>View Timeline Context</span>
-            </a>
-
-            <button
-              type="button"
-              onClick={onClose}
-              className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded transition-colors ml-1"
-              title="Close modal"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded transition-colors"
+                title="Close modal"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
 
