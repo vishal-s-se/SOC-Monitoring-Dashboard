@@ -79,7 +79,7 @@ if [ -z "$AUTH_TOKEN" ]; then
         if [ -n "$INPUT_TOKEN" ]; then
             AUTH_TOKEN="$INPUT_TOKEN"
         else
-            AUTH_TOKEN=$(grep "auth_token:" /etc/soc-monitor-agent/agent.yml | head -n1 | awk '{print $2}' | tr -d '"'\'')
+            AUTH_TOKEN=$(grep "auth_token:" /etc/soc-monitor-agent/agent.yml | head -n1 | awk '{print $2}' | tr -d "\"'")
         fi
     else
         echo -e "\033[1;33mPlease enter your one-time enrollment token from the SOC Monitor dashboard:\033[0m"
@@ -136,7 +136,7 @@ TMP_CONFIG=$(mktemp)
 
 # If keeping existing token from file when none was provided:
 if [ -z "$AUTH_TOKEN" ] && [ -f "$CONFIG_FILE" ]; then
-    AUTH_TOKEN=$(grep "auth_token:" "$CONFIG_FILE" | head -n1 | awk '{print $2}' | tr -d '"'\''')
+    AUTH_TOKEN=$(grep "auth_token:" "$CONFIG_FILE" | head -n1 | awk '{print $2}' | tr -d "\"'")
 fi
 
 cat <<EOF > "$TMP_CONFIG"
