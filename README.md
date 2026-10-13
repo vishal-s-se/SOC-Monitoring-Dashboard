@@ -173,15 +173,40 @@ python -m alembic upgrade head
 ```
 *(Expected output: Applies migrations up to head revision `c6126f7d6e20`).*
 
-### Step 6: Start All Local Services
-Run the automated PowerShell startup script:
+### Step 6: Start Local Services
+
+You can launch all platform tiers together or run each service independently using the dedicated PowerShell lifecycle scripts:
+
+#### Option A: Unified Startup Manager
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\Start-SOCMonitor.ps1
 ```
-Or start services independently in separate terminals:
-- **Backend:** `python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000`
-- **Collector:** `python -m uvicorn collector.app.main:app --host 0.0.0.0 --port 5000`
-- **Frontend:** `cd frontend && npm run dev`
+
+#### Option B: Dedicated Tiered Startup Scripts
+For modular debugging, run each component in its own terminal:
+
+1. **Database Inspector & Migrator:**
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File .\scripts\Start-Database.ps1 -ApplyMigrations
+   ```
+   *Validates `.env`, checks and starts local PostgreSQL services if stopped, verifies query execution, and checks/applies Alembic migrations.*
+
+2. **Backend API Launcher:**
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File .\scripts\Start-Backend.ps1 -Reload
+   ```
+   *Validates Python 3.10+, checks dependencies, verifies database reachability, tests port 8000 availability, and launches FastAPI.*
+
+3. **Frontend Dashboard Launcher:**
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File .\scripts\Start-Frontend.ps1
+   ```
+   *Validates Node.js & npm, checks `node_modules`, inspects `NEXT_PUBLIC_API_URL`, verifies port 3000, and launches Next.js.*
+
+4. **Collector Service (for endpoints):**
+   ```powershell
+   python -m uvicorn collector.app.main:app --host 0.0.0.0 --port 5000
+   ```
 
 Open your browser to: **[http://localhost:3000](http://localhost:3000)**
 

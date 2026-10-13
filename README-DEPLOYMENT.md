@@ -116,13 +116,34 @@ python -m alembic upgrade head
 *(Verify output indicates migration up to head `c6126f7d6e20`).*
 
 ### Step 4: Launching All Services
-You can run the validated automated startup script:
+
+#### Option A: Unified Startup Script
+You can run the validated automated startup manager:
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\Start-SOCMonitor.ps1
 ```
 This script validates ports, checks PostgreSQL status, and opens labelled windows for Backend, Collector, and Frontend.
 
-To start services manually in separate terminals:
+#### Option B: Modular Tiered Startup Scripts
+For fine-grained control or troubleshooting:
+- **1. Database Verification & Migrations:**
+  ```powershell
+  powershell -ExecutionPolicy Bypass -File .\scripts\Start-Database.ps1 -ApplyMigrations
+  ```
+- **2. Backend API Launcher:**
+  ```powershell
+  powershell -ExecutionPolicy Bypass -File .\scripts\Start-Backend.ps1 -Reload
+  ```
+- **3. Frontend Dashboard Launcher:**
+  ```powershell
+  powershell -ExecutionPolicy Bypass -File .\scripts\Start-Frontend.ps1
+  ```
+- **4. Collector Service:**
+  ```powershell
+  python -m uvicorn collector.app.main:app --host 0.0.0.0 --port 5000
+  ```
+
+#### Option C: Manual Terminal Launch
 - **Terminal 1 (Backend API):**
   ```powershell
   $env:PYTHONPATH = (Get-Location).Path

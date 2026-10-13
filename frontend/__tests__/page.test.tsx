@@ -28,9 +28,11 @@ describe('Home Page', () => {
 
   it('loads the dashboard overview and metrics', async () => {
     render(<Page />)
-    expect(await screen.findByText('SOC Overview')).toBeInTheDocument()
-    expect(screen.getByText('Total Agents')).toBeInTheDocument()
-    expect(screen.getByText('Open Alerts')).toBeInTheDocument()
+    expect(await screen.findByText('Overview')).toBeInTheDocument()
+    const activeEndpoints = await screen.findByText('Active Endpoints')
+    expect(activeEndpoints).toBeInTheDocument()
+    const openAlerts = await screen.findByText('Open Alerts')
+    expect(openAlerts).toBeInTheDocument()
   })
 
   it('shows the API error state', async () => {
