@@ -78,6 +78,14 @@ const NAV_SECTIONS: NavSection[] = [
     href: '/system-health',
   },
   {
+    name: 'Reports & Analytics',
+    defaultOpen: false,
+    items: [
+      { name: 'Report Generator', href: '/reports' },
+      { name: 'Metrics & Trends', href: '/metrics' },
+    ]
+  },
+  {
     name: 'Advanced Tools',
     defaultOpen: false,
     items: [
@@ -100,8 +108,6 @@ function NavContent() {
     }
     // No query in item href
     if (pathname === itemPath) {
-      // If the current URL has an OS query parameter but the item doesn't expect one,
-      // only match if neither windows nor linux is specified (or on dedicated OS routes like /windows-logs)
       if (currentOs && (itemPath === '/authentication' || itemPath === '/network' || itemPath === '/firewall' || itemPath === '/processes' || itemPath === '/live-events')) {
         return false
       }
@@ -115,7 +121,6 @@ function NavContent() {
     NAV_SECTIONS.forEach(section => {
       if (section.items) {
         const hasActive = section.items.some(item => isItemActive(item.href))
-        // If an item is active, definitely expand. Otherwise use defaultOpen or specific OS match
         if (hasActive) {
           initialState[section.name] = true
         } else if (section.name === 'Windows' && (pathname.startsWith('/windows') || currentOs === 'windows')) {
@@ -143,11 +148,19 @@ function NavContent() {
 
   return (
     <nav className="w-64 bg-gray-950 text-white flex flex-col h-full shrink-0 border-r border-gray-800">
-      <div className="p-5 border-b border-gray-800 flex items-center space-x-2">
-        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-500">
-          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-        </svg>
-        <h1 className="text-xl font-bold text-gray-100 tracking-tight">SOC Monitor</h1>
+      <div className="p-4 border-b border-gray-800 flex items-center space-x-3">
+        <img
+          src="/images/socforge-shield.png"
+          alt="SOCForge Shield Emblem"
+          className="w-8 h-8 rounded object-contain shadow-sm shadow-cyan-500/20"
+        />
+        <div>
+          <div className="flex items-center space-x-1.5">
+            <h1 className="text-lg font-bold text-gray-100 tracking-tight">SOCForge</h1>
+            <span className="text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded bg-blue-900/60 text-blue-300 border border-blue-700/50">DEFENSE</span>
+          </div>
+          <p className="text-[10px] text-gray-400 tracking-wider uppercase font-medium">Monitor • Investigate • Defend</p>
+        </div>
       </div>
       <div className="flex-1 overflow-y-auto py-4 px-2 space-y-1">
         {NAV_SECTIONS.map((section) => {

@@ -67,3 +67,19 @@ class FirewallReport(BaseModel):
     blocked: int
     rejected: int
     activity: List[Dict[str, Any]]
+
+class ReportWizardRequest(BaseModel):
+    title: str = "SOCForge Security Incident & Health Report"
+    period_preset: str = "24h"  # 24h, 7d, 30d, custom
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+    endpoints: Optional[List[str]] = None  # None / empty = all authorized
+    sections: List[str] = [
+        "executive_summary",
+        "alerts",
+        "events",
+        "investigations",
+        "mitre_attack"
+    ]
+    presentation_format: str = "graphs_and_text"  # text_only, graphs_and_text, graphs_only
+    include_raw_evidence: bool = False

@@ -25,5 +25,6 @@ describe('Dashboard navigation', () => {
     expect(screen.getByRole('link', { name: 'Investigations' })).toHaveAttribute('href', '/investigations');
     expect(screen.getByRole('link', { name: 'MITRE ATT&CK' })).toHaveAttribute('href', '/mitre');
     expect(screen.getByRole('link', { name: 'Agents' })).toHaveAttribute('href', '/agents');
+    expect(screen.getByText('SOCForge')).toBeInTheDocument();
   });
 });

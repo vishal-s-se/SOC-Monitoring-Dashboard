@@ -1,12 +1,12 @@
-# SOC Monitor — Comprehensive Architectural, Deployment, and Operations Manual
+# SOCForge — Enterprise Defensive Cybersecurity & Telemetry Platform
 
-**SOC Monitor** is an enterprise-grade, lightweight Security Operations Center (SOC) monitoring and host-based SIEM platform designed for centralized endpoint telemetry collection, normalization, real-time threat detection, correlation, alerting, forensics, and interactive timeline visualization.
+**SOCForge** (**Monitor. Investigate. Defend.**) is an enterprise-grade Security Operations Center (SOC) monitoring and defensive SIEM platform designed for centralized endpoint telemetry collection, normalization, real-time threat detection, correlation, alerting, forensics, interactive timeline visualization, and guided audit PDF reporting.
 
 ---
 
 ## 1. Project Overview & Current Status
 
-SOC Monitor provides hybrid Windows and Linux host monitoring with a FastAPI backend, an asynchronous ingestion collector, a Next.js real-time analyst dashboard, and dedicated endpoint agents.
+SOCForge provides hybrid Windows and Linux host monitoring with a FastAPI backend, an asynchronous ingestion collector, a Next.js real-time analyst dashboard, and dedicated endpoint agents.
 
 ### Current Implementation Status
 - **Current Version:** `0.1.0`

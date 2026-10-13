@@ -42,6 +42,12 @@ export default function UnifiedExplorerPage() {
   const [payloadCopied, setPayloadCopied] = useState(false)
   const [idCopied, setIdCopied] = useState(false)
 
+  // Scoped Log Deletion Modal State
+  const [showClearModal, setShowClearModal] = useState(false)
+  const [clearingLogs, setClearingLogs] = useState(false)
+  const [clearConfirmationText, setClearConfirmationText] = useState("")
+  const [clearResultMsg, setClearResultMsg] = useState("")
+
   const loadData = useCallback(async () => {
     try {
       setLoading(true)
@@ -182,6 +188,31 @@ export default function UnifiedExplorerPage() {
               { value: 'system', label: 'System' }
             ]}
           />
+        </div>
+        <div className="flex items-end space-x-2">
+          <button
+            type="button"
+            onClick={() => {
+              setSearch("")
+              setSeverity("")
+              setSourceType("")
+              setOs("")
+              setCategory("")
+              setPage(1)
+            }}
+            className="px-3 py-2 text-xs font-medium text-gray-300 hover:text-white bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded transition-colors"
+            title="Reset active search and dropdown filters"
+          >
+            Clear Filters
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowClearModal(true)}
+            className="px-3 py-2 text-xs font-medium text-red-300 hover:text-red-100 bg-red-950/60 hover:bg-red-900/60 border border-red-800/80 rounded transition-colors"
+            title="Permanently delete persisted logs within currently active scope"
+          >
+            Clear Scoped Logs
+          </button>
         </div>
       </FilterBar>
 
@@ -399,6 +430,94 @@ export default function UnifiedExplorerPage() {
           defaultTitle={`Investigation: Event ${selectedEvent.event_id}`}
           onClose={() => setShowInvestigateModal(false)}
         />
+      )}
+
+      {/* Scoped Log Deletion Confirmation Modal */}
+      {showClearModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+          <div className="bg-gray-900 border border-red-800/80 rounded-xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
+            <div className="flex items-center space-x-3 text-red-400">
+              <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <h3 className="text-base font-bold text-white">Confirm Scoped Log Deletion</h3>
+            </div>
+
+            <p className="text-xs text-gray-300 leading-relaxed">
+              This action permanently purges persisted raw events from the PostgreSQL database within the currently filtered scope.
+              Alerts, investigations, and agent enrollment states will <span className="font-semibold text-green-400">remain untouched</span>.
+            </p>
+
+            <div className="p-3 bg-gray-950 border border-gray-800 rounded-md text-xs space-y-1 font-mono">
+              <div className="text-gray-400">Active Scope:</div>
+              <div>• Category: <span className="text-cyan-400">{category || "All Categories"}</span></div>
+              <div>• OS / Platform: <span className="text-cyan-400">{os || "All Operating Systems"}</span></div>
+              <div>• Estimated affected records: <span className="text-red-400 font-bold">{total}</span></div>
+            </div>
+
+            <div>
+              <label className="block text-xs text-gray-300 mb-1">
+                Type <span className="font-bold text-red-400">CONFIRM-DELETE</span> below to proceed:
+              </label>
+              <input
+                type="text"
+                value={clearConfirmationText}
+                onChange={e => setClearConfirmationText(e.target.value)}
+                placeholder="CONFIRM-DELETE"
+                className="w-full px-3 py-2 bg-gray-950 border border-gray-700 rounded text-xs text-white focus:outline-none focus:border-red-500 font-mono"
+              />
+            </div>
+
+            {clearResultMsg && (
+              <div className="p-2 bg-blue-950/80 border border-blue-800 rounded text-xs text-blue-200">
+                {clearResultMsg}
+              </div>
+            )}
+
+            <div className="flex justify-end space-x-3 pt-3 border-t border-gray-800">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowClearModal(false)
+                  setClearConfirmationText("")
+                  setClearResultMsg("")
+                }}
+                className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded text-xs"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={clearConfirmationText !== "CONFIRM-DELETE" || clearingLogs}
+                onClick={async () => {
+                  try {
+                    setClearingLogs(true)
+                    const params: Record<string, string> = { confirm: "true" }
+                    if (category) params.event_category = category
+                    if (os) params.operating_system = os
+                    
+                    const queryStr = new URLSearchParams(params).toString()
+                    const res = await api.delete<any>(`/events/scoped-clear?${queryStr}`)
+                    setClearResultMsg(`Success: ${res.records_deleted} records deleted.`)
+                    setTimeout(() => {
+                      setShowClearModal(false)
+                      setClearConfirmationText("")
+                      setClearResultMsg("")
+                      loadData()
+                    }, 1500)
+                  } catch (err: any) {
+                    setClearResultMsg(`Error: ${err.message || 'Deletion failed'}`)
+                  } finally {
+                    setClearingLogs(false)
+                  }
+                }}
+                className="px-4 py-2 bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white rounded text-xs font-bold transition-all"
+              >
+                {clearingLogs ? "Deleting..." : "Permanently Delete Scoped Logs"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

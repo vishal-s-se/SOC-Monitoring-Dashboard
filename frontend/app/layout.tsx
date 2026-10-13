@@ -4,8 +4,8 @@ import Nav from '@/components/nav'
 import TopBar from '@/components/TopBar'
 
 export const metadata: Metadata = {
-  title: 'SOC Monitor',
-  description: 'Lightweight Security Operations Center Monitoring',
+  title: 'SOCForge — Monitor. Investigate. Defend.',
+  description: 'SOCForge: Enterprise Defensive Security Operations Center Monitoring & Investigation Platform',
 }
 
 export default function RootLayout({

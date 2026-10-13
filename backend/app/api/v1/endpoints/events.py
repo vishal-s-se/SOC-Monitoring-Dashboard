@@ -1,15 +1,18 @@
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import func, or_, cast, String
+from sqlalchemy import func, or_, cast, String, delete
 from typing import Optional
 from datetime import datetime
 
 from backend.app.db.session import get_db
 from backend.app.models.event import Event as EventModel
 from backend.app.models.raw_log import RawLog as RawLogModel
+from backend.app.models.user import User
 from backend.app.schemas.event import Event
 from backend.app.schemas.pagination import PaginatedResponse
+from backend.app.api.deps import require_analyst
+from backend.app.core.audit import audit
 
 router = APIRouter()
 
@@ -108,3 +111,69 @@ async def get_event(id: int, db: AsyncSession = Depends(get_db)):
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
     return event
+
+
+@router.delete("/scoped-clear")
+async def clear_scoped_events(
+    event_category: Optional[str] = Query(None, description="Scope by event category"),
+    operating_system: Optional[str] = Query(None, description="Scope by operating system (windows/linux)"),
+    hostname: Optional[str] = Query(None, description="Scope by hostname"),
+    source_type: Optional[str] = Query(None, description="Scope by source type"),
+    confirm: bool = Query(False, description="Must explicitly be true to confirm deletion"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_analyst)
+):
+    """
+    Safely delete persisted events within a strictly defined scope.
+    Never deletes alerts, investigations, agents, or hosts.
+    Requires Analyst or Admin role and explicit confirm=true flag.
+    """
+    if not confirm:
+        raise HTTPException(
+            status_code=400,
+            detail="Confirmation required. Set 'confirm=true' after user verification to execute scoped deletion."
+        )
+
+    # Require at least one scoping parameter to prevent accidental purge of entire database
+    if not any([event_category, operating_system, hostname, source_type]):
+        raise HTTPException(
+            status_code=400,
+            detail="At least one scoping parameter (category, operating_system, hostname, or source_type) is required."
+        )
+
+    del_stmt = delete(EventModel)
+    scope_details = {}
+
+    if event_category:
+        del_stmt = del_stmt.where(EventModel.event_category == event_category)
+        scope_details["event_category"] = event_category
+    if operating_system:
+        del_stmt = del_stmt.where(EventModel.operating_system.ilike(f"%{operating_system}%"))
+        scope_details["operating_system"] = operating_system
+    if hostname:
+        del_stmt = del_stmt.where(EventModel.hostname.ilike(f"%{hostname}%"))
+        scope_details["hostname"] = hostname
+    if source_type:
+        del_stmt = del_stmt.where(EventModel.source_type == source_type)
+        scope_details["source_type"] = source_type
+
+    res = await db.execute(del_stmt)
+    await db.commit()
+
+    deleted_count = res.rowcount or 0
+
+    audit(
+        "scoped_logs_deleted",
+        actor=current_user.username,
+        outcome="success",
+        records_deleted=deleted_count,
+        scope=scope_details
+    )
+
+    return {
+        "status": "success",
+        "message": f"Successfully deleted {deleted_count} scoped events.",
+        "records_deleted": deleted_count,
+        "scope": scope_details
+    }
+

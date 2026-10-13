@@ -54,7 +54,7 @@ export default function TopBar() {
       <header className="h-16 bg-gray-900 border-b border-gray-800 flex items-center justify-between px-6 shrink-0 text-white">
         <div className="flex items-center space-x-3 sm:space-x-4">
           <div className="text-lg font-semibold text-gray-200 flex items-center">
-            SOC Monitor <span className="text-xs text-gray-400 bg-gray-800 px-2 py-1 rounded ml-2 hidden sm:inline-block">MAIN ENVIRONMENT</span>
+            SOCForge <span className="text-xs text-blue-400 bg-blue-950/80 border border-blue-800/60 px-2 py-0.5 rounded ml-2 hidden sm:inline-block font-mono">COMMAND CENTER</span>
           </div>
 
           {/* Persistent Glowing Add Endpoint CTA Button */}
@@ -66,6 +66,18 @@ export default function TopBar() {
             <span className="text-sm font-bold leading-none">+</span>
             <span>Add Endpoint</span>
           </button>
+
+          {/* Prominent Subtly Glowing Generate Report CTA Button */}
+          <Link
+            href="/reports"
+            aria-label="Open guided PDF report generator wizard"
+            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-md bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white text-xs font-semibold tracking-wide border border-cyan-400/60 transition-all duration-200 shadow-md shadow-cyan-950/50 hover:shadow-cyan-500/20 active:scale-95"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            <span>Generate Report</span>
+          </Link>
         </div>
 
       <div className="flex items-center space-x-6">

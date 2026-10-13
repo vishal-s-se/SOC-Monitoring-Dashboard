@@ -71,7 +71,42 @@ export default function OverviewPage() {
     }
   }, [lastMessage])
 
-  if (error) return <ErrorState message={error} retry={loadData} />
+  if (error) {
+    const isDbUnavailable = error.toLowerCase().includes("database") || error.toLowerCase().includes("connection") || error.toLowerCase().includes("503")
+    if (isDbUnavailable) {
+      return (
+        <div className="p-8 max-w-2xl mx-auto my-12 bg-red-950/80 border-2 border-red-600 rounded-xl text-center space-y-4 shadow-2xl animate-fade-in">
+          <div className="w-16 h-16 mx-auto rounded-full bg-red-900/60 flex items-center justify-center text-red-400">
+            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          </div>
+          <h2 className="text-2xl font-black text-white tracking-wide">
+            Create a database to store the logs
+          </h2>
+          <p className="text-sm text-red-200">
+            The PostgreSQL database is unconfigured or currently unreachable on port 5432.
+            Endpoint telemetry cannot be durably persisted until the database service is provisioned.
+          </p>
+          <div className="pt-2 flex justify-center space-x-3">
+            <button
+              onClick={loadData}
+              className="px-4 py-2 bg-red-700 hover:bg-red-600 text-white rounded text-xs font-semibold"
+            >
+              Retry Connection
+            </button>
+            <a
+              href="/help"
+              className="px-4 py-2 bg-gray-900 hover:bg-gray-800 text-gray-200 border border-gray-700 rounded text-xs"
+            >
+              Database Setup Runbook
+            </a>
+          </div>
+        </div>
+      )
+    }
+    return <ErrorState message={error} retry={loadData} />
+  }
 
   // Format data for Recharts
   const COLORS_SEVERITY: Record<string, string> = {

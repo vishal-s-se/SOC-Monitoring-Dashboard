@@ -82,15 +82,25 @@ export default function LoginPage() {
         <div className="absolute inset-0 bg-gradient-to-t from-gray-950 via-transparent to-gray-950" />
       </div>
 
-      <div className="sm:mx-auto sm:w-full sm:max-w-md relative z-10">
-        <div className="flex justify-center text-blue-500 mb-4">
-          <ShieldIcon />
+      <div className="sm:mx-auto sm:w-full sm:max-w-md relative z-10 text-center">
+        <div className="flex justify-center mb-4">
+          <div className="relative">
+            <div className="absolute -inset-1 rounded-full bg-cyan-500/20 blur-md animate-pulse"></div>
+            <img
+              src="/images/socforge-shield.png"
+              alt="SOCForge Shield"
+              className="relative w-16 h-16 object-contain rounded drop-shadow-[0_0_15px_rgba(6,182,212,0.5)]"
+            />
+          </div>
         </div>
-        <h2 className="text-center text-3xl font-extrabold text-white tracking-tight">
-          SOC Monitor
+        <h2 className="text-3xl font-extrabold text-white tracking-tight">
+          SOCForge
         </h2>
-        <p className="mt-2 text-center text-sm text-gray-400">
-          Sign in to access the security operations center
+        <p className="mt-1 text-xs uppercase tracking-widest text-cyan-400 font-semibold">
+          Monitor. Investigate. Defend.
+        </p>
+        <p className="mt-2 text-sm text-gray-400">
+          Enter analyst credentials to access the defense operations console
         </p>
       </div>
 

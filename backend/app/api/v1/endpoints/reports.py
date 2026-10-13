@@ -16,8 +16,12 @@ from backend.app.models.host import Host
 from backend.app.models.agent import Agent
 from backend.app.schemas.report import (
     DailySecuritySummary, ReportMetadata, HostReport, IPReport, 
-    AlertReport, TimelineReport, AuthReport, FirewallReport
+    AlertReport, TimelineReport, AuthReport, FirewallReport,
+    ReportWizardRequest
 )
+from backend.app.api.deps import get_current_active_user
+from backend.app.models.user import User
+from backend.app.services.pdf_generator import generate_socforge_pdf
 
 router = APIRouter()
 
@@ -286,3 +290,171 @@ async def get_firewall_report(
         rejected=rejected,
         activity=[{"id": e.event_id, "time": e.timestamp, "action": e.action} for e in events]
     )
+
+
+def _resolve_wizard_time_window(request: ReportWizardRequest):
+    now = datetime.now(timezone.utc)
+    preset = (request.period_preset or "24h").lower()
+    if preset == "24h":
+        return now - timedelta(hours=24), now, "Last 24 Hours"
+    elif preset == "7d":
+        return now - timedelta(days=7), now, "Last 7 Days"
+    elif preset == "30d":
+        return now - timedelta(days=30), now, "Last 30 Days"
+    elif preset == "custom":
+        start = request.start_time or (now - timedelta(hours=24))
+        end = request.end_time or now
+        if end <= start:
+            raise HTTPException(status_code=400, detail="Custom end_time must be after start_time")
+        return start, end, f"Custom: {start.strftime('%Y-%m-%d %H:%M')} to {end.strftime('%Y-%m-%d %H:%M')} UTC"
+    return now - timedelta(hours=24), now, "Last 24 Hours"
+
+
+@router.post("/wizard/preview")
+async def preview_wizard_report(
+    req: ReportWizardRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    start_time, end_time, time_desc = _resolve_wizard_time_window(req)
+    
+    # Base queries scoped by endpoints if specified
+    ev_stmt = select(func.count(Event.id)).where(Event.timestamp >= start_time, Event.timestamp <= end_time)
+    al_stmt = select(func.count(Alert.id)).where(Alert.first_seen >= start_time, Alert.first_seen <= end_time)
+    
+    if req.endpoints:
+        ev_stmt = ev_stmt.where(Event.hostname.in_(req.endpoints))
+        al_stmt = al_stmt.join(Host, Alert.host_id == Host.id).where(Host.hostname.in_(req.endpoints))
+        
+    events_count = (await db.execute(ev_stmt)).scalar() or 0
+    alerts_count = (await db.execute(al_stmt)).scalar() or 0
+    inv_count = (await db.execute(select(func.count(Investigation.id)).where(Investigation.created_at >= start_time, Investigation.status != 'CLOSED'))).scalar() or 0
+    
+    hosts_total = (await db.execute(select(func.count(Host.id)))).scalar() or 0
+    hosts_online = (await db.execute(select(func.count(Host.id)).where(Host.status == "ONLINE"))).scalar() or 0
+
+    return {
+        "title": req.title,
+        "time_range_desc": time_desc,
+        "start_time": start_time.isoformat(),
+        "end_time": end_time.isoformat(),
+        "endpoints_selected": req.endpoints or ["All Authorized Endpoints"],
+        "sections_selected": req.sections,
+        "presentation_format": req.presentation_format,
+        "data_availability": {
+            "events_count": events_count,
+            "alerts_count": alerts_count,
+            "investigations_count": inv_count,
+            "hosts_online": hosts_online,
+            "hosts_total": hosts_total,
+            "has_data": (events_count > 0 or alerts_count > 0)
+        }
+    }
+
+
+@router.post("/wizard/generate-pdf")
+async def generate_wizard_pdf_report(
+    req: ReportWizardRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    start_time, end_time, time_desc = _resolve_wizard_time_window(req)
+    
+    # Gather real telemetry scoped by endpoint and time
+    ev_query = select(Event).where(Event.timestamp >= start_time, Event.timestamp <= end_time)
+    al_query = select(Alert).where(Alert.first_seen >= start_time, Alert.first_seen <= end_time)
+    
+    if req.endpoints:
+        ev_query = ev_query.where(Event.hostname.in_(req.endpoints))
+        al_query = al_query.join(Host, Alert.host_id == Host.id).where(Host.hostname.in_(req.endpoints))
+        
+    events_res = await db.execute(ev_query.order_by(Event.timestamp.desc()).limit(100))
+    events_sample = [
+        {
+            "timestamp": str(e.timestamp),
+            "event_category": e.event_category or "general",
+            "event_type": e.event_type or "system",
+            "hostname": e.hostname or "N/A",
+            "username": e.username or "SYSTEM",
+            "action": e.action or e.severity or "INFO"
+        }
+        for e in events_res.scalars().all()
+    ]
+    
+    alerts_res = await db.execute(al_query.order_by(Alert.severity.desc(), Alert.first_seen.desc()).limit(50))
+    alerts_sample = [
+        {
+            "id": a.id,
+            "title": a.title,
+            "severity": a.severity,
+            "status": a.status,
+            "host_id": a.host_id
+        }
+        for a in alerts_res.scalars().all()
+    ]
+    
+    inv_res = await db.execute(select(Investigation).where(Investigation.created_at >= start_time).limit(20))
+    inv_sample = [
+        {
+            "id": i.id,
+            "title": i.title,
+            "status": i.status,
+            "severity": i.severity
+        }
+        for i in inv_res.scalars().all()
+    ]
+    
+    # Operational metrics
+    ev_cnt_stmt = select(func.count(Event.id)).where(Event.timestamp >= start_time, Event.timestamp <= end_time)
+    al_cnt_stmt = select(func.count(Alert.id)).where(Alert.first_seen >= start_time, Alert.first_seen <= end_time)
+    if req.endpoints:
+        ev_cnt_stmt = ev_cnt_stmt.where(Event.hostname.in_(req.endpoints))
+        al_cnt_stmt = al_cnt_stmt.join(Host, Alert.host_id == Host.id).where(Host.hostname.in_(req.endpoints))
+
+    total_events = (await db.execute(ev_cnt_stmt)).scalar() or 0
+    total_alerts = (await db.execute(al_cnt_stmt)).scalar() or 0
+    active_inv = len(inv_sample)
+    online_hosts = (await db.execute(select(func.count(Host.id)).where(Host.status == "ONLINE"))).scalar() or 0
+
+    auth_success = (await db.execute(select(func.count(Event.id)).where(Event.timestamp >= start_time, Event.event_category == "authentication", Event.action == "success"))).scalar() or 0
+    auth_failure = (await db.execute(select(func.count(Event.id)).where(Event.timestamp >= start_time, Event.event_category == "authentication", Event.action == "failure"))).scalar() or 0
+    fw_allow = (await db.execute(select(func.count(Event.id)).where(Event.timestamp >= start_time, Event.event_category == "network", Event.action == "allow"))).scalar() or 0
+    fw_block = (await db.execute(select(func.count(Event.id)).where(Event.timestamp >= start_time, Event.event_category == "network", Event.action == "block"))).scalar() or 0
+
+    metrics = {
+        "total_events": total_events,
+        "total_alerts": total_alerts,
+        "active_investigations": active_inv,
+        "online_hosts": online_hosts,
+        "auth_success": auth_success,
+        "auth_failure": auth_failure,
+        "firewall_allow": fw_allow,
+        "firewall_block": fw_block
+    }
+
+    import os
+    logo_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "frontend", "public", "images", "socforge-shield.png"))
+    if not os.path.exists(logo_path):
+        logo_path = None
+
+    pdf_bytes = generate_socforge_pdf(
+        report_title=req.title,
+        time_range_desc=time_desc,
+        scope_endpoints=req.endpoints or [],
+        sections_selected=req.sections,
+        presentation_format=req.presentation_format,
+        metrics=metrics,
+        events_sample=events_sample,
+        alerts_sample=alerts_sample,
+        investigations_sample=inv_sample,
+        generated_by=current_user.username or "SOC Analyst",
+        logo_path=logo_path
+    )
+
+    safe_title = safe_filename(f"SOCForge_Report_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.pdf")
+    response = StreamingResponse(io.BytesIO(pdf_bytes), media_type="application/pdf")
+    response.headers["Content-Disposition"] = f'attachment; filename="{safe_title}"'
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
+
