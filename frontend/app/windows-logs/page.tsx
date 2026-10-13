@@ -11,6 +11,7 @@ import { SeverityBadge } from '@/components/ui/SeverityBadge'
 import { FilterBar, FilterInput, FilterSelect } from '@/components/ui/FilterBar'
 import { Pagination } from '@/components/ui/Pagination'
 import { EventDetailsModal } from '@/components/ui/EventDetailsModal'
+import { TabClearControl } from '@/components/ui/TabClearControl'
 
 import { TrendAreaChart, CategoryBarChart, DistributionDonutChart } from '@/components/ui/TabCharts'
 
@@ -54,6 +55,7 @@ export default function WindowsLogsPage() {
           page,
           page_size: pageSize,
           operating_system: 'windows',
+          view_category: 'logs',
           severity: severity || undefined,
           source_type: sourceType || undefined,
           search: debouncedSearch || undefined
@@ -106,6 +108,15 @@ export default function WindowsLogsPage() {
       <PageHeader
         title="Windows Logs"
         description="Search and filter normalized Windows event logs"
+        actions={
+          <TabClearControl
+            operatingSystem="windows"
+            tabCategory="logs"
+            tabTitle="Windows Logs"
+            onCleared={loadData}
+            historyUrl="/windows-history"
+          />
+        }
       />
 
       {/* Visualizations: Channels, EventIDs, Volume */}

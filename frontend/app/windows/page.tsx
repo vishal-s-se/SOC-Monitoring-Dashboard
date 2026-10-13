@@ -10,6 +10,7 @@ import { SeverityBadge } from '@/components/ui/SeverityBadge'
 import { DataTable } from '@/components/ui/DataTable'
 import { useWebSocket } from '@/hooks/useWebSocket'
 import { EventDetailsModal } from '@/components/ui/EventDetailsModal'
+import { ClearLogsButton } from '@/components/ui/ClearLogsButton'
 
 import {
   PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer,
@@ -105,20 +106,28 @@ export default function WindowsOverviewPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <PageHeader
-          title="Windows Monitoring Overview"
-          description="Security telemetry, Windows Event Logs, and endpoint activity (Last 24 Hours)"
-        />
-        <div className="flex items-center space-x-2">
-          <span className="inline-flex items-center rounded-md bg-sky-500/10 px-2.5 py-1 text-xs font-semibold text-sky-400 ring-1 ring-inset ring-sky-500/20">
-            Windows Telemetry
-          </span>
-          <span className="inline-flex items-center rounded-md bg-gray-800 px-2.5 py-1 text-xs font-medium text-gray-300">
-            24h Window
-          </span>
-        </div>
-      </div>
+      <PageHeader
+        title="Windows Monitoring Overview"
+        description="Security telemetry, Windows Event Logs, and endpoint activity (Last 24 Hours)"
+        actions={
+          <div className="flex items-center space-x-3">
+            <ClearLogsButton
+              operatingSystem="windows"
+              tabCategory="logs"
+              tabTitle="Windows Monitoring Overview"
+              onCleared={loadData}
+              historyUrl="/windows-history"
+              activeFilters={{ Scope: 'Windows Telemetry', Window: '24h' }}
+            />
+            <span className="inline-flex items-center rounded-md bg-sky-500/10 px-2.5 py-1 text-xs font-semibold text-sky-400 ring-1 ring-inset ring-sky-500/20">
+              Windows Telemetry
+            </span>
+            <span className="inline-flex items-center rounded-md bg-gray-800 px-2.5 py-1 text-xs font-medium text-gray-300">
+              24h Window
+            </span>
+          </div>
+        }
+      />
 
       {/* Quick Navigation Pills */}
       <div className="flex flex-wrap gap-2">

@@ -12,6 +12,7 @@ import { SeverityBadge } from '@/components/ui/SeverityBadge'
 import { FilterBar, FilterInput, FilterSelect } from '@/components/ui/FilterBar'
 import { Pagination } from '@/components/ui/Pagination'
 import { EventDetailsModal } from '@/components/ui/EventDetailsModal'
+import { TabClearControl } from '@/components/ui/TabClearControl'
 import { TrendAreaChart, CategoryBarChart, DistributionDonutChart } from '@/components/ui/TabCharts'
 
 function ProcessesContent() {
@@ -56,6 +57,7 @@ function ProcessesContent() {
           page,
           page_size: pageSize,
           event_category: 'process',
+          view_category: 'process',
           event_type: eventType || undefined,
           operating_system: osParam || undefined,
           search: debouncedSearch || undefined
@@ -109,21 +111,32 @@ function ProcessesContent() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <PageHeader
-          title={title}
-          description="Monitor process creation, commandline execution, and daemon tracking"
-        />
-        {osParam && (
-          <span className={`inline-flex items-center rounded-md px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${
-            osParam === 'windows'
-              ? 'bg-sky-500/10 text-sky-400 ring-sky-500/20'
-              : 'bg-amber-500/10 text-amber-400 ring-amber-500/20'
-          }`}>
-            {osParam.toUpperCase()} Filtered
-          </span>
-        )}
-      </div>
+      <PageHeader
+        title={title}
+        description="Monitor process creation, commandline execution, and daemon tracking"
+        actions={
+          <div className="flex items-center space-x-3">
+            {osParam && (
+              <TabClearControl
+                operatingSystem={osParam}
+                tabCategory="processes"
+                tabTitle={title}
+                onCleared={loadData}
+                historyUrl={osParam === 'windows' ? '/windows-history' : '/linux-history'}
+              />
+            )}
+            {osParam && (
+              <span className={`inline-flex items-center rounded-md px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${
+                osParam === 'windows'
+                  ? 'bg-sky-500/10 text-sky-400 ring-sky-500/20'
+                  : 'bg-amber-500/10 text-amber-400 ring-amber-500/20'
+              }`}>
+                {osParam.toUpperCase()} Filtered
+              </span>
+            )}
+          </div>
+        }
+      />
 
       {/* Process Telemetry Visualizations */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

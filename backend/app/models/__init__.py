@@ -14,3 +14,4 @@ from backend.app.models.mitre import MitreTactic, MitreTechnique, MitreTechnique
 from .analytics import BehaviorBaseline, BehaviorDeviation, BehaviorDeviationEvidence, BehaviorCorrelation
 from backend.app.models.retention import RetentionPolicy, CleanupAuditLog
 from .enrollment import EnrollmentCode
+from .view_clear_marker import ViewClearMarker

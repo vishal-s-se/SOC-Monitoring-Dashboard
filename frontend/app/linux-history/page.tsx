@@ -66,6 +66,7 @@ function LinuxHistoryContent() {
           page,
           page_size: pageSize,
           operating_system: 'linux',
+          include_cleared: true,
           severity: severity || undefined,
           agent_id: selectedAgentId || undefined,
           search: (debouncedSearch || unitFilter) ? `${debouncedSearch} ${unitFilter}`.trim() : undefined
@@ -96,6 +97,15 @@ function LinuxHistoryContent() {
         />
         <span className="inline-flex items-center rounded-md bg-amber-500/10 px-2.5 py-1 text-xs font-semibold text-amber-400 ring-1 ring-inset ring-amber-500/20">
           Linux Provenance
+        </span>
+      </div>
+
+      <div className="p-3 bg-gray-900/60 border border-amber-800/40 rounded-lg flex items-center space-x-3 text-xs text-gray-300">
+        <svg className="w-5 h-5 text-amber-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <span>
+          <strong>Persistent Forensic Archive:</strong> This history view retains all historical Linux events, including entries cleared from active monitoring views. Underlying security records are never deleted by view-clear operations.
         </span>
       </div>
 

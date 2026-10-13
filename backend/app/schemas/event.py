@@ -37,3 +37,17 @@ class Event(EventInDBBase):
 
 class CorrelatedEvent(Event):
     correlation_reason: str
+
+class ViewClearRequest(BaseModel):
+    operating_system: str
+    category: str
+
+class ViewClearMarkerResponse(BaseModel):
+    id: int
+    operating_system: str
+    category: str
+    last_cleared_event_id: int
+    cleared_at: Optional[datetime] = None
+    cleared_by: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)

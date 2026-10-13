@@ -10,6 +10,7 @@ import { DataTable } from '@/components/ui/DataTable'
 import { useWebSocket } from '@/hooks/useWebSocket'
 import { SeverityBadge } from '@/components/ui/SeverityBadge'
 import { EventDetailsModal } from '@/components/ui/EventDetailsModal'
+import { TabClearControl } from '@/components/ui/TabClearControl'
 
 import { TrendAreaChart, CategoryBarChart, DistributionDonutChart } from '@/components/ui/TabCharts'
 
@@ -29,7 +30,7 @@ function LiveEventsContent() {
   const loadInitial = async () => {
     try {
       setLoading(true)
-      const queryParams: any = { limit: 50 }
+      const queryParams: any = { limit: 50, view_category: 'live' }
       if (osParam) {
         queryParams.operating_system = osParam
       }
@@ -86,6 +87,15 @@ function LiveEventsContent() {
         }
         actions={
           <div className="flex items-center space-x-3">
+            {osParam && (
+              <TabClearControl
+                operatingSystem={osParam}
+                tabCategory="live"
+                tabTitle={displayTitle}
+                onCleared={loadInitial}
+                historyUrl={osParam === 'windows' ? '/windows-history' : '/linux-history'}
+              />
+            )}
             {osParam && (
               <span className={`inline-flex items-center rounded-md px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${
                 osParam === 'windows'

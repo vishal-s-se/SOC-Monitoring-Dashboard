@@ -67,6 +67,7 @@ function WindowsHistoryContent() {
           page,
           page_size: pageSize,
           operating_system: 'windows',
+          include_cleared: true,
           channel: channel || undefined,
           severity: severity || undefined,
           agent_id: selectedAgentId || undefined,
@@ -98,6 +99,15 @@ function WindowsHistoryContent() {
         />
         <span className="inline-flex items-center rounded-md bg-sky-500/10 px-2.5 py-1 text-xs font-semibold text-sky-400 ring-1 ring-inset ring-sky-500/20">
           Windows Provenance
+        </span>
+      </div>
+
+      <div className="p-3 bg-gray-900/60 border border-cyan-800/40 rounded-lg flex items-center space-x-3 text-xs text-gray-300">
+        <svg className="w-5 h-5 text-cyan-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <span>
+          <strong>Persistent Forensic Archive:</strong> This history view retains all historical Windows events, including entries cleared from active monitoring views. Underlying security records are never deleted by view-clear operations.
         </span>
       </div>
 

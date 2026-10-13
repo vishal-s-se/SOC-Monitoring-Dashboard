@@ -73,7 +73,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-950 flex flex-col justify-center py-12 sm:px-6 lg:px-8 relative overflow-hidden">
+    <div className="min-h-full flex-1 flex flex-col justify-center items-center px-4 sm:px-6 lg:px-8 py-8 sm:py-12 relative overflow-x-hidden">
       {/* Background Motif */}
       <div className="absolute inset-0 z-0 opacity-20 pointer-events-none flex items-center justify-center overflow-hidden">
         <div className="w-[800px] h-[800px] rounded-full border-[1px] border-blue-500/30 absolute" />
@@ -82,35 +82,37 @@ export default function LoginPage() {
         <div className="absolute inset-0 bg-gradient-to-t from-gray-950 via-transparent to-gray-950" />
       </div>
 
-      <div className="sm:mx-auto sm:w-full sm:max-w-md relative z-10 text-center">
-        <div className="flex justify-center mb-4">
-          <div className="relative">
-            <div className="absolute -inset-1 rounded-full bg-cyan-500/20 blur-md animate-pulse"></div>
-            <img
-              src="/images/socforge-shield.png"
-              alt="SOCForge Shield"
-              className="relative w-16 h-16 object-contain rounded drop-shadow-[0_0_15px_rgba(6,182,212,0.5)]"
-            />
+      {/* Cohesive Centered Group: Branding Header + Login Card */}
+      <div className="w-full max-w-md mx-auto relative z-10 flex flex-col items-center">
+        {/* Header Branding Area */}
+        <div className="w-full text-center mb-6 sm:mb-8">
+          <div className="flex justify-center mb-4 sm:mb-5">
+            <div className="relative group">
+              <div className="absolute -inset-1.5 rounded-2xl bg-cyan-500/25 blur-lg motion-safe:animate-pulse"></div>
+              <img
+                src="/images/socforge-shield.png"
+                alt="SOCForge Shield Logo"
+                className="relative w-20 h-20 sm:w-24 sm:h-24 object-contain rounded-xl drop-shadow-[0_0_20px_rgba(6,182,212,0.55)] transition-transform duration-300 motion-safe:group-hover:scale-105"
+              />
+            </div>
           </div>
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+            SOCForge
+          </h1>
+          <p className="mt-1.5 text-[11px] sm:text-xs uppercase tracking-widest text-cyan-400 font-semibold">
+            Monitor. Investigate. Defend.
+          </p>
+          <p className="mt-2 text-xs sm:text-sm text-gray-400 max-w-sm mx-auto">
+            Enter analyst credentials to access the defense operations console
+          </p>
         </div>
-        <h2 className="text-3xl font-extrabold text-white tracking-tight">
-          SOCForge
-        </h2>
-        <p className="mt-1 text-xs uppercase tracking-widest text-cyan-400 font-semibold">
-          Monitor. Investigate. Defend.
-        </p>
-        <p className="mt-2 text-sm text-gray-400">
-          Enter analyst credentials to access the defense operations console
-        </p>
-      </div>
 
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md relative z-10">
-        <div className="bg-gray-900 py-8 px-4 shadow-2xl sm:rounded-xl sm:px-10 border border-gray-800">
-          
+        {/* Login Card */}
+        <div className="w-full bg-gray-900/95 backdrop-blur-sm py-7 sm:py-8 px-5 sm:px-10 shadow-2xl rounded-xl border border-gray-800/90 shadow-cyan-950/20">
           {error && (
-            <div className="mb-6 bg-red-900/50 border border-red-800 rounded-md p-4 flex items-start space-x-3" role="alert">
+            <div className="mb-6 bg-red-900/50 border border-red-800 rounded-md p-3.5 sm:p-4 flex items-start space-x-3" role="alert">
               <AlertCircleIcon />
-              <p className="text-sm text-red-200">{error}</p>
+              <p className="text-xs sm:text-sm text-red-200 leading-snug">{error}</p>
             </div>
           )}
 

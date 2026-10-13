@@ -10,6 +10,7 @@ import { SeverityBadge } from '@/components/ui/SeverityBadge'
 import { DataTable } from '@/components/ui/DataTable'
 import { useWebSocket } from '@/hooks/useWebSocket'
 import { EventDetailsModal } from '@/components/ui/EventDetailsModal'
+import { ClearLogsButton } from '@/components/ui/ClearLogsButton'
 
 import {
   PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer,
@@ -105,20 +106,28 @@ export default function LinuxOverviewPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <PageHeader
-          title="Linux Monitoring Overview"
-          description="Systemd journald telemetry, syslog ingestion, and daemon activity (Last 24 Hours)"
-        />
-        <div className="flex items-center space-x-2">
-          <span className="inline-flex items-center rounded-md bg-amber-500/10 px-2.5 py-1 text-xs font-semibold text-amber-400 ring-1 ring-inset ring-amber-500/20">
-            Linux Telemetry
-          </span>
-          <span className="inline-flex items-center rounded-md bg-gray-800 px-2.5 py-1 text-xs font-medium text-gray-300">
-            24h Window
-          </span>
-        </div>
-      </div>
+      <PageHeader
+        title="Linux Monitoring Overview"
+        description="Systemd journald telemetry, syslog ingestion, and daemon activity (Last 24 Hours)"
+        actions={
+          <div className="flex items-center space-x-3">
+            <ClearLogsButton
+              operatingSystem="linux"
+              tabCategory="logs"
+              tabTitle="Linux Monitoring Overview"
+              onCleared={loadData}
+              historyUrl="/linux-history"
+              activeFilters={{ Scope: 'Linux Telemetry', Window: '24h' }}
+            />
+            <span className="inline-flex items-center rounded-md bg-amber-500/10 px-2.5 py-1 text-xs font-semibold text-amber-400 ring-1 ring-inset ring-amber-500/20">
+              Linux Telemetry
+            </span>
+            <span className="inline-flex items-center rounded-md bg-gray-800 px-2.5 py-1 text-xs font-medium text-gray-300">
+              24h Window
+            </span>
+          </div>
+        }
+      />
 
       {/* Observability Status Notice */}
       <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3 text-xs text-amber-300 flex items-start space-x-2">

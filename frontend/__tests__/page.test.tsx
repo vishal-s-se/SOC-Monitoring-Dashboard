@@ -3,7 +3,7 @@ import Page from '../app/page'
 import { api } from '@/lib/api'
 
 jest.mock('@/lib/api', () => ({
-  api: { get: jest.fn() }
+  api: { get: jest.fn(), post: jest.fn() }
 }))
 
 jest.mock('@/hooks/useWebSocket', () => ({
@@ -29,6 +29,8 @@ describe('Home Page', () => {
   it('loads the dashboard overview and metrics', async () => {
     render(<Page />)
     expect(await screen.findByText('Overview')).toBeInTheDocument()
+    const clearLogsBtn = await screen.findByRole('button', { name: /clear logs/i })
+    expect(clearLogsBtn).toBeInTheDocument()
     const activeEndpoints = await screen.findByText('Active Endpoints')
     expect(activeEndpoints).toBeInTheDocument()
     const openAlerts = await screen.findByText('Open Alerts')

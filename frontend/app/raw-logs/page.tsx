@@ -12,6 +12,7 @@ import { Pagination } from '@/components/ui/Pagination'
 import { useDebounce } from '@/hooks/useDebounce'
 import { FilterBar, FilterInput, FilterSelect } from '@/components/ui/FilterBar'
 import { AddToInvestigationModal } from '@/components/ui/AddToInvestigationModal'
+import { ClearLogsButton } from '@/components/ui/ClearLogsButton'
 import { TrendAreaChart, CategoryBarChart, DistributionDonutChart } from '@/components/ui/TabCharts'
 
 export default function UnifiedExplorerPage() {
@@ -205,6 +206,13 @@ export default function UnifiedExplorerPage() {
           >
             Clear Filters
           </button>
+          <ClearLogsButton
+            operatingSystem={os || "all"}
+            tabCategory={category || "all"}
+            tabTitle="Unified Explorer"
+            onCleared={loadData}
+            activeFilters={{ OS: os || 'All', Category: category || 'All', Severity: severity || 'All' }}
+          />
           <button
             type="button"
             onClick={() => setShowClearModal(true)}

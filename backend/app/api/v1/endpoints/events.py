@@ -8,8 +8,9 @@ from datetime import datetime
 from backend.app.db.session import get_db
 from backend.app.models.event import Event as EventModel
 from backend.app.models.raw_log import RawLog as RawLogModel
+from backend.app.models.view_clear_marker import ViewClearMarker
 from backend.app.models.user import User
-from backend.app.schemas.event import Event
+from backend.app.schemas.event import Event, ViewClearRequest, ViewClearMarkerResponse
 from backend.app.schemas.pagination import PaginatedResponse
 from backend.app.api.deps import require_analyst
 from backend.app.core.audit import audit
@@ -34,6 +35,8 @@ async def list_events(
     search: Optional[str] = None,
     start_time: Optional[datetime] = None,
     end_time: Optional[datetime] = None,
+    include_cleared: bool = Query(False, description="Whether to include events cleared from active views"),
+    view_category: Optional[str] = Query(None, description="Category/tab identifier for view clear filtering (e.g. logs, live, authentication)"),
     db: AsyncSession = Depends(get_db)
 ):
     stmt = select(EventModel)
@@ -84,6 +87,35 @@ async def list_events(
         if start_time and end_time < start_time:
             raise HTTPException(status_code=400, detail="end_time must be after start_time")
         stmt = stmt.where(EventModel.timestamp <= end_time)
+
+    # Apply non-destructive view-clear filter unless include_cleared is True
+    if not include_cleared:
+        cat_key = (view_category or event_category or "all").lower().strip()
+        os_key = (operating_system or "").lower().strip()
+        marker_stmt = select(func.max(ViewClearMarker.last_cleared_event_id))
+        
+        if os_key:
+            marker_stmt = marker_stmt.where(
+                or_(
+                    ViewClearMarker.operating_system.ilike(f"%{os_key}%"),
+                    ViewClearMarker.operating_system == "all"
+                )
+            )
+        else:
+            # Overall dashboard view: applies if 'all' OS marker exists
+            marker_stmt = marker_stmt.where(ViewClearMarker.operating_system == "all")
+
+        if cat_key:
+            marker_stmt = marker_stmt.where(
+                or_(
+                    ViewClearMarker.category.ilike(cat_key),
+                    ViewClearMarker.category == "all"
+                )
+            )
+        marker_res = await db.execute(marker_stmt)
+        watermark = marker_res.scalar_one_or_none()
+        if watermark and watermark > 0:
+            stmt = stmt.where(EventModel.id > watermark)
 
     # Count total
     count_stmt = select(func.count()).select_from(stmt.subquery())
@@ -176,4 +208,83 @@ async def clear_scoped_events(
         "records_deleted": deleted_count,
         "scope": scope_details
     }
+
+
+@router.post("/view-clear", response_model=ViewClearMarkerResponse)
+async def clear_active_view(
+    payload: ViewClearRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_analyst)
+):
+    """
+    Non-destructively clear the active view for a specific operating system and tab/category.
+    Records a high-water mark (the current maximum Event.id) in `view_clear_marker`.
+    Underlying events are NEVER deleted; they remain fully preserved in database and History tabs.
+    """
+    os_clean = payload.operating_system.strip().lower()
+    cat_clean = payload.category.strip().lower()
+
+    if not os_clean:
+        raise HTTPException(status_code=400, detail="operating_system is required")
+    if not cat_clean:
+        raise HTTPException(status_code=400, detail="category is required")
+
+    # Find the current maximum event id for this scope
+    max_stmt = select(func.max(EventModel.id))
+    if os_clean != "all":
+        max_stmt = max_stmt.where(EventModel.operating_system.ilike(f"%{os_clean}%"))
+    if cat_clean != "all" and cat_clean != "logs" and cat_clean != "live":
+        max_stmt = max_stmt.where(EventModel.event_category.ilike(f"%{cat_clean}%"))
+
+    max_res = await db.execute(max_stmt)
+    current_max_id = max_res.scalar_one_or_none() or 0
+
+    # Look for existing marker or create a new one
+    marker_query = select(ViewClearMarker).where(
+        ViewClearMarker.operating_system == os_clean,
+        ViewClearMarker.category == cat_clean
+    )
+    res = await db.execute(marker_query)
+    marker = res.scalars().first()
+
+    if marker:
+        marker.last_cleared_event_id = current_max_id
+        marker.cleared_by = current_user.username
+    else:
+        marker = ViewClearMarker(
+            operating_system=os_clean,
+            category=cat_clean,
+            last_cleared_event_id=current_max_id,
+            cleared_by=current_user.username
+        )
+        db.add(marker)
+
+    await db.commit()
+    await db.refresh(marker)
+
+    audit(
+        "view_cleared",
+        actor=current_user.username,
+        outcome="success",
+        operating_system=os_clean,
+        category=cat_clean,
+        watermark_event_id=current_max_id
+    )
+
+    return marker
+
+
+@router.get("/view-clear-markers", response_model=list[ViewClearMarkerResponse])
+async def list_view_clear_markers(
+    operating_system: Optional[str] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Fetch active view clear markers.
+    """
+    stmt = select(ViewClearMarker)
+    if operating_system:
+        stmt = stmt.where(ViewClearMarker.operating_system.ilike(f"%{operating_system}%"))
+    res = await db.execute(stmt)
+    return res.scalars().all()
 

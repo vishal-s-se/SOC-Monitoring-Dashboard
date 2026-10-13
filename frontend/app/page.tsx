@@ -10,6 +10,7 @@ import { SeverityBadge } from '@/components/ui/SeverityBadge'
 import { DataTable } from '@/components/ui/DataTable'
 import { useWebSocket } from '@/hooks/useWebSocket'
 import { useRouter } from 'next/navigation'
+import { ClearLogsButton } from '@/components/ui/ClearLogsButton'
 
 import {
   PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer,
@@ -144,17 +145,24 @@ export default function OverviewPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <PageHeader
-          title="Overview"
-          description="High-level SOC metrics and analytics (Last 24 Hours)"
-        />
-        <div className="flex space-x-2">
-           <span className="inline-flex items-center rounded-md bg-blue-500/10 px-2 py-1 text-xs font-medium text-blue-400 ring-1 ring-inset ring-blue-500/20">
-             24h Range
-           </span>
-        </div>
-      </div>
+      <PageHeader
+        title="Overview"
+        description="High-level SOC metrics and analytics (Last 24 Hours)"
+        actions={
+          <div className="flex items-center space-x-3">
+            <ClearLogsButton
+              operatingSystem="all"
+              tabCategory="all"
+              tabTitle="Overall Dashboard"
+              onCleared={loadData}
+              activeFilters={{ Range: '24 Hours', Scope: 'Aggregated Flow' }}
+            />
+            <span className="inline-flex items-center rounded-md bg-blue-500/10 px-2 py-1 text-xs font-medium text-blue-400 ring-1 ring-inset ring-blue-500/20">
+              24h Range
+            </span>
+          </div>
+        }
+      />
 
       {loading ? (
         <>

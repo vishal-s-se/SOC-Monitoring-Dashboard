@@ -47,6 +47,39 @@ body {
     box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
     border-color: rgba(96, 165, 250, 0.8);
   }
+  .clear-logs-btn {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+/* SOCForge Reusable Clear Logs Button: Restrained Cyan/Blue Glow & Dark Navy Theme */
+.clear-logs-btn {
+  background-color: #0b1329; /* Dark navy */
+  border: 1px solid rgba(56, 189, 248, 0.45); /* Subtle cyan border */
+  box-shadow: 0 0 8px rgba(14, 165, 233, 0.2), inset 0 0 4px rgba(14, 165, 233, 0.1);
+  color: #e0f2fe;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.clear-logs-btn:hover:not(:disabled) {
+  background-color: #0f1d3d;
+  border-color: rgba(56, 189, 248, 0.85);
+  box-shadow: 0 0 14px rgba(14, 165, 233, 0.45), 0 0 4px rgba(56, 189, 248, 0.3), inset 0 0 6px rgba(14, 165, 233, 0.2);
+  color: #ffffff;
+}
+
+.clear-logs-btn:active:not(:disabled) {
+  background-color: #091024;
+  border-color: rgba(56, 189, 248, 0.95);
+  box-shadow: 0 0 6px rgba(14, 165, 233, 0.3), inset 0 0 8px rgba(14, 165, 233, 0.3);
+  transform: scale(0.98);
+}
+
+.clear-logs-btn:focus-visible {
+  outline: 2px solid #38bdf8;
+  outline-offset: 2px;
+  box-shadow: 0 0 16px rgba(14, 165, 233, 0.5);
 }
 
 /* Add Endpoint Modal: 75vw Desktop Responsive Sizing */

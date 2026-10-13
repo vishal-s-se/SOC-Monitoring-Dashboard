@@ -12,6 +12,7 @@ import { SeverityBadge } from '@/components/ui/SeverityBadge'
 import { FilterBar, FilterInput, FilterSelect } from '@/components/ui/FilterBar'
 import { Pagination } from '@/components/ui/Pagination'
 import { EventDetailsModal } from '@/components/ui/EventDetailsModal'
+import { TabClearControl } from '@/components/ui/TabClearControl'
 
 import { TrendAreaChart, CategoryBarChart, DistributionDonutChart } from '@/components/ui/TabCharts'
 
@@ -58,6 +59,7 @@ function AuthenticationContent() {
           page,
           page_size: pageSize,
           event_category: 'authentication',
+          view_category: 'authentication',
           event_type: eventType || undefined,
           action: action || undefined,
           operating_system: osParam || undefined,
@@ -113,21 +115,32 @@ function AuthenticationContent() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <PageHeader
-          title={title}
-          description="Monitor user logins, authentication failures, and access events"
-        />
-        {osParam && (
-          <span className={`inline-flex items-center rounded-md px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${
-            osParam === 'windows'
-              ? 'bg-sky-500/10 text-sky-400 ring-sky-500/20'
-              : 'bg-amber-500/10 text-amber-400 ring-amber-500/20'
-          }`}>
-            {osParam.toUpperCase()} Filtered
-          </span>
-        )}
-      </div>
+      <PageHeader
+        title={title}
+        description="Monitor user logins, authentication failures, and access events"
+        actions={
+          <div className="flex items-center space-x-3">
+            {osParam && (
+              <TabClearControl
+                operatingSystem={osParam}
+                tabCategory="authentication"
+                tabTitle={title}
+                onCleared={loadData}
+                historyUrl={osParam === 'windows' ? '/windows-history' : '/linux-history'}
+              />
+            )}
+            {osParam && (
+              <span className={`inline-flex items-center rounded-md px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${
+                osParam === 'windows'
+                  ? 'bg-sky-500/10 text-sky-400 ring-sky-500/20'
+                  : 'bg-amber-500/10 text-amber-400 ring-amber-500/20'
+              }`}>
+                {osParam.toUpperCase()} Filtered
+              </span>
+            )}
+          </div>
+        }
+      />
 
       {/* Authentication Telemetry Visualizations */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
