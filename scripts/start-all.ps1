@@ -11,8 +11,8 @@ Write-Host "Starting Backend API on http://localhost:8000..." -ForegroundColor G
 Start-Process powershell -WorkingDirectory "$projectRoot" -ArgumentList "-NoExit", "-Command", "`$Host.UI.RawUI.WindowTitle = 'SOC Monitor - Backend (Port 8000)'; & '.\backend\venv\Scripts\uvicorn.exe' backend.app.main:app --reload --port 8000"
 
 # 2. Start Collector API (Port 5000)
-Write-Host "Starting Collector on http://localhost:5000..." -ForegroundColor Green
-Start-Process powershell -WorkingDirectory "$projectRoot\collector" -ArgumentList "-NoExit", "-Command", "`$Host.UI.RawUI.WindowTitle = 'SOC Monitor - Collector (Port 5000)'; & '$projectRoot\backend\venv\Scripts\uvicorn.exe' app.main:app --reload --port 5000"
+Write-Host "Starting Collector on http://0.0.0.0:5000..." -ForegroundColor Green
+Start-Process powershell -WorkingDirectory "$projectRoot\collector" -ArgumentList "-NoExit", "-Command", "`$Host.UI.RawUI.WindowTitle = 'SOC Monitor - Collector (Port 5000)'; & '$projectRoot\backend\venv\Scripts\uvicorn.exe' app.main:app --host 0.0.0.0 --reload --port 5000"
 
 # 3. Start Frontend Dashboard (Port 3000)
 Write-Host "Starting Frontend Dashboard on http://localhost:3000..." -ForegroundColor Green

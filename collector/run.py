@@ -10,7 +10,7 @@ from collector.app.config import settings
 
 if __name__ == "__main__":
     kwargs = {
-        "host": "0.0.0.0",
+        "host": settings.COLLECTOR_HOST,
         "port": settings.COLLECTOR_PORT,
         "reload": True
     }

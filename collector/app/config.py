@@ -8,6 +8,7 @@ class CollectorSettings(BaseSettings):
     def get_db_url(self):
         return self.DATABASE_URL.replace('postgresql://', 'postgresql+asyncpg://')
     PROJECT_NAME: str = "SOC Collector"
+    COLLECTOR_HOST: str = "0.0.0.0"
     COLLECTOR_PORT: int = 5000
     AGENT_SHARED_SECRET: str = Field(default_factory=lambda: secrets.token_urlsafe(32))
     DATABASE_URL: str = "postgresql+asyncpg://localhost:5432/soc_monitor"
