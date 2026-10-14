@@ -18,12 +18,21 @@ except ImportError:
     logger.debug("win32evtlog not available (expected on non-Windows test hosts)")
 
 class WindowsEventLogCollector:
+    # Channels that are standard vs optional add-ons on Windows systems
+    OPTIONAL_CHANNELS = {
+        "Microsoft-Windows-Sysmon/Operational",
+        "Microsoft-Windows-Windows Defender/Operational",
+        "Microsoft-Windows-PowerShell/Operational",
+    }
+
     def __init__(self, channels, state_manager, transport, identity):
         self.channels = channels
         self.state_manager = state_manager
         self.transport = transport
         self.identity = identity
         self.handles = {}
+        self.unavailable_channels = set()
+        self._warned_channels = set()
         
     def setup(self):
         if not HAS_WIN32:
@@ -85,6 +94,9 @@ class WindowsEventLogCollector:
         if not HAS_WIN32:
             return 0
             
+        if channel in self.unavailable_channels:
+            return 0
+
         state_key = f"win_evt_{channel}"
         state = self.state_manager.get_state(state_key, default={"bookmark": None})
         
@@ -152,11 +164,38 @@ class WindowsEventLogCollector:
                 self.state_manager.set_state(state_key, state)
                     
         except Exception as e:
-            err_msg = str(e).lower()
-            if "not found" in err_msg or "cannot find" in err_msg or "channel" in err_msg:
-                logger.warning(f"Windows Event channel '{channel}' is unavailable or not installed on this host: {e}")
-            elif "access is denied" in err_msg or "permission" in err_msg:
-                logger.warning(f"Permission denied accessing Windows Event channel '{channel}': {e}")
+            # Check for missing channel error (WinError 15007: ERROR_EVT_CHANNEL_NOT_FOUND)
+            win_error_code = None
+            if hasattr(e, "winerror"):
+                win_error_code = e.winerror
+            elif hasattr(e, "args") and len(e.args) > 0 and isinstance(e.args[0], int):
+                win_error_code = e.args[0]
+
+            is_missing_channel = win_error_code == 15007 or any(
+                phrase in str(e).lower()
+                for phrase in ("the specified channel could not be found", "15007", "channel not found")
+            )
+
+            is_perm_error = win_error_code == 5 or any(
+                phrase in str(e).lower()
+                for phrase in ("access is denied", "permission denied")
+            )
+
+            if is_missing_channel:
+                is_optional = channel in self.OPTIONAL_CHANNELS
+                self.unavailable_channels.add(channel)
+                if channel not in self._warned_channels:
+                    self._warned_channels.add(channel)
+                    if is_optional:
+                        logger.warning(
+                            f"Optional Windows Event channel '{channel}' is not installed or enabled on this host; skipping."
+                        )
+                    else:
+                        logger.warning(
+                            f"Windows Event channel '{channel}' was not found on this host; skipping: {e}"
+                        )
+            elif is_perm_error:
+                logger.error(f"Permission denied collecting from Windows Event channel '{channel}': {e}")
             else:
                 logger.error(f"Error collecting from channel {channel}: {e}")
             

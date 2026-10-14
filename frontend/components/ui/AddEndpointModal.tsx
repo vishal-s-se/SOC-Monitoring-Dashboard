@@ -42,13 +42,12 @@ function CodeBlock({ code, label }: { code: string; label?: string }) {
           type="button"
           onClick={handleCopy}
           aria-label={`Copy ${label || 'command'}`}
-          className={`px-2.5 py-0.5 rounded text-[11px] font-medium transition-all duration-150 flex items-center space-x-1 border ${
-            copied
-              ? 'bg-emerald-950 border-emerald-600 text-emerald-300'
-              : copyError
+          className={`px-2.5 py-0.5 rounded text-[11px] font-medium transition-all duration-150 flex items-center space-x-1 border ${copied
+            ? 'bg-emerald-950 border-emerald-600 text-emerald-300'
+            : copyError
               ? 'bg-red-950 border-red-600 text-red-300'
               : 'bg-gray-800 hover:bg-gray-700 border-gray-700 text-gray-300 hover:text-white'
-          }`}
+            }`}
         >
           {copied ? (
             <>
@@ -111,13 +110,12 @@ function CopyAllButton({ fullText, label }: { fullText: string; label: string })
       type="button"
       onClick={handleCopyAll}
       aria-label={`Copy complete ${label}`}
-      className={`w-full py-2 px-3 rounded-lg font-semibold text-xs transition-all duration-200 flex items-center justify-center space-x-2 border shadow-md active:scale-[0.99] ${
-        copied
-          ? 'bg-emerald-950 border-emerald-500 text-emerald-200'
-          : copyError
+      className={`w-full py-2 px-3 rounded-lg font-semibold text-xs transition-all duration-200 flex items-center justify-center space-x-2 border shadow-md active:scale-[0.99] ${copied
+        ? 'bg-emerald-950 border-emerald-500 text-emerald-200'
+        : copyError
           ? 'bg-red-950 border-red-500 text-red-200'
           : 'bg-blue-600/90 hover:bg-blue-500 border-blue-400/80 text-white'
-      }`}
+        }`}
     >
       <span>{copied ? '✓' : '⚡'}</span>
       <span>{copied ? 'One-Liner Copied to Clipboard!' : `Copy ${label}`}</span>
@@ -171,65 +169,46 @@ export function AddEndpointModal({ isOpen, onClose }: { isOpen: boolean; onClose
 
   if (!isOpen) return null
 
-  // Windows Commands
-  const winInteractiveOneLiner = `$env:AGENTAUTHTOKEN = Read-Host "Paste enrollment token"; try { Invoke-WebRequest -Uri "http://${collectorHost}:${collectorPort}/api/v1/agents/download/install-agent.ps1" -OutFile "install-agent.ps1"; .\\install-agent.ps1 -CollectorHost "${collectorHost}" -CollectorPort ${collectorPort} } finally { Remove-Item Env:AGENTAUTHTOKEN -ErrorAction SilentlyContinue }`
-  
-  const winSilentOneLiner = `$env:AGENTAUTHTOKEN = "${code || '<PASTE_TOKEN>'}"; try { Invoke-WebRequest -Uri "http://${collectorHost}:${collectorPort}/api/v1/agents/download/install-agent.ps1" -OutFile "install-agent.ps1"; .\\install-agent.ps1 -CollectorHost "${collectorHost}" -CollectorPort ${collectorPort} } finally { Remove-Item Env:AGENTAUTHTOKEN -ErrorAction SilentlyContinue }`
-
-  const winDirectInstallCmd = `# Alternative: run installer directly (prompts securely with hidden input if AGENTAUTHTOKEN is unset)
-Invoke-WebRequest -Uri "http://${collectorHost}:${collectorPort}/api/v1/agents/download/install-agent.ps1" -OutFile "install-agent.ps1"; .\\install-agent.ps1 -CollectorHost "${collectorHost}" -CollectorPort ${collectorPort}`
-
-  const winDownloadCmd = `# Download installer script (PowerShell as Administrator)
-Invoke-WebRequest -Uri "http://${collectorHost}:${collectorPort}/api/v1/agents/download/install-agent.ps1" -OutFile "install-agent.ps1"`
-
-  const winInstallCmd = `# Run installer with secure hidden token prompt
-.\\install-agent.ps1 -CollectorHost "${collectorHost}" -CollectorPort ${collectorPort}`
+  // Single verified install commands per OS
+  // Windows: Automated execution in Admin PowerShell with pre-injected enrollment token, SHA256 integrity, and finally cleanup
+  const winInstallCmd = `$env:AGENTAUTHTOKEN = "${code}"; try { Invoke-WebRequest -Uri "http://${collectorHost}:${collectorPort}/api/v1/agents/download/install-agent.ps1" -OutFile "install-agent.ps1" -UseBasicParsing; powershell -ExecutionPolicy Bypass -File ".\\install-agent.ps1" -CollectorHost "${collectorHost}" -CollectorPort ${collectorPort} } finally { Remove-Item Env:AGENTAUTHTOKEN -ErrorAction SilentlyContinue }`
 
   const winVerifyCmd = `# Verify Windows Service Status
 Get-Service SOCMonitorAgent
-Get-Content -Tail 20 "C:\\ProgramData\\SOCMonitorAgent\\agent.log"`
+Get-Content -Tail 20 "C:\\ProgramData\\SOCMonitorAgent\\service.log"`
 
-  const winUninstallCmd = `# Run the dedicated uninstaller (preserves identity by default)
+  const winUninstallCmd = `# Dedicated Uninstaller (preserves local identity & configuration by default)
 & "C:\\ProgramData\\SOCMonitorAgent\\uninstall-agent.ps1"
 
 # Or clean wipe all local state and configuration:
 & "C:\\ProgramData\\SOCMonitorAgent\\uninstall-agent.ps1" -FullCleanup`
 
-  // Linux / Kali Commands
-  const linuxInteractiveOneLiner = `read -rsp "Paste enrollment token: " AGENTAUTHTOKEN && echo && curl -fsSL "http://${collectorHost}:${collectorPort}/api/v1/agents/download/install-agent.sh" -o install-agent.sh && chmod +x install-agent.sh && sudo AGENTAUTHTOKEN="$AGENTAUTHTOKEN" ./install-agent.sh --host "${collectorHost}" --port ${collectorPort}; unset AGENTAUTHTOKEN`
+  // Linux / Kali: Automated execution in root/sudo bash with pre-injected enrollment token, SHA256 integrity, dpkg install, and trap cleanup
+  const linuxInstallCmd = `curl -fsSL "http://${collectorHost}:${collectorPort}/api/v1/agents/download/install-agent.sh" -o install-agent.sh && chmod +x install-agent.sh && sudo AGENTAUTHTOKEN="${code}" ./install-agent.sh --host "${collectorHost}" --port ${collectorPort}`
 
-  const linuxSilentOneLiner = `curl -fsSL "http://${collectorHost}:${collectorPort}/api/v1/agents/download/install-agent.sh" -o install-agent.sh && chmod +x install-agent.sh && sudo AGENTAUTHTOKEN="${code || '<PASTE_TOKEN>'}" ./install-agent.sh --host "${collectorHost}" --port ${collectorPort}`
-
-  const linuxDirectInstallCmd = `# Alternative: run installer directly (prompts secretly for token if AGENTAUTHTOKEN is unset)
-curl -fsSL "http://${collectorHost}:${collectorPort}/api/v1/agents/download/install-agent.sh" -o install-agent.sh && chmod +x install-agent.sh && sudo ./install-agent.sh --host "${collectorHost}" --port ${collectorPort}`
-
-  const linuxDownloadCmd = `# 1. Download installer script
-curl -fsSL "http://${collectorHost}:${collectorPort}/api/v1/agents/download/install-agent.sh" -o install-agent.sh
-chmod +x install-agent.sh`
-
-  const linuxInstallCmd = `# 2. Run installer (prompts securely for token, auto-detects systemd/journald)
-sudo ./install-agent.sh --host "${collectorHost}" --port ${collectorPort}`
-
-  const linuxVerifyCmd = `# 3. Verify service and journal ingestion
+  const linuxVerifyCmd = `# Verify service and journal ingestion
 sudo systemctl status soc-agent.service
 sudo journalctl -u soc-agent.service -n 20 --no-pager`
 
-  const linuxUninstallCmd = `# Dedicated uninstaller (preserves host identity)
+  const linuxUninstallCmd = `# Dedicated uninstaller (preserves host identity & configuration by default)
 sudo /opt/soc-monitor-agent/uninstall-agent.sh
 
 # Or clean wipe all local state and keys:
 sudo /opt/soc-monitor-agent/uninstall-agent.sh --full`
 
   // WSL Commands
-  const wslInteractiveOneLiner = `read -rsp "Paste enrollment token: " AGENTAUTHTOKEN && echo && curl -fsSL "http://${collectorHost}:${collectorPort}/api/v1/agents/download/install-agent.sh" -o install-agent.sh && chmod +x install-agent.sh && sudo AGENTAUTHTOKEN="$AGENTAUTHTOKEN" ./install-agent.sh --host "${collectorHost}" --port ${collectorPort}; unset AGENTAUTHTOKEN`
+  const wslInstallCmd = `curl -fsSL "http://${collectorHost}:${collectorPort}/api/v1/agents/download/install-agent.sh" -o install-agent.sh && chmod +x install-agent.sh && sudo AGENTAUTHTOKEN="${code}" ./install-agent.sh --host "${collectorHost}" --port ${collectorPort}`
 
   const wslManualStartCmd = `# If systemd is not enabled in WSL, start manually in background:
 sudo /opt/soc-monitor-agent/soc-agent --config /etc/soc-monitor-agent/agent.yml &`
 
+  const wslUninstallCmd = `# Dedicated uninstaller for WSL
+sudo /opt/soc-monitor-agent/uninstall-agent.sh`
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 md:p-6 bg-black/75 backdrop-blur-sm overflow-y-auto">
       <div className="add-endpoint-modal-dialog w-[calc(100vw-2rem)] sm:w-[90vw] lg:w-[min(75vw,1400px)] max-w-[1400px] min-w-[300px] bg-gray-900 border border-gray-800 rounded-xl shadow-2xl max-h-[90vh] flex flex-col overflow-hidden my-auto animate-in fade-in duration-150">
-        
+
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800 bg-gray-950/80 shrink-0">
           <div className="flex items-center space-x-3">
@@ -239,8 +218,8 @@ sudo /opt/soc-monitor-agent/soc-agent --config /etc/soc-monitor-agent/agent.yml 
               <p className="text-xs text-gray-400">Stream real-time security events, auth logs, and process telemetry into SOC Monitor</p>
             </div>
           </div>
-          <button 
-            onClick={onClose} 
+          <button
+            onClick={onClose}
             className="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-800 transition-colors"
             aria-label="Close modal"
           >
@@ -253,11 +232,10 @@ sudo /opt/soc-monitor-agent/soc-agent --config /etc/soc-monitor-agent/agent.yml 
           <button
             type="button"
             onClick={() => { setActiveTab('windows'); generateToken('windows'); }}
-            className={`flex items-center space-x-2 px-4 py-2.5 rounded-t-lg font-medium text-xs transition-all border-t border-l border-r ${
-              activeTab === 'windows'
-                ? 'bg-gray-900 border-gray-700 text-blue-400 border-b-transparent shadow-sm'
-                : 'border-transparent text-gray-400 hover:text-gray-200 hover:bg-gray-800/40'
-            }`}
+            className={`flex items-center space-x-2 px-4 py-2.5 rounded-t-lg font-medium text-xs transition-all border-t border-l border-r ${activeTab === 'windows'
+              ? 'bg-gray-900 border-gray-700 text-blue-400 border-b-transparent shadow-sm'
+              : 'border-transparent text-gray-400 hover:text-gray-200 hover:bg-gray-800/40'
+              }`}
           >
             <span>🪟</span>
             <span>Windows (10 / 11 / Server)</span>
@@ -266,11 +244,10 @@ sudo /opt/soc-monitor-agent/soc-agent --config /etc/soc-monitor-agent/agent.yml 
           <button
             type="button"
             onClick={() => { setActiveTab('linux'); generateToken('linux'); }}
-            className={`flex items-center space-x-2 px-4 py-2.5 rounded-t-lg font-medium text-xs transition-all border-t border-l border-r ${
-              activeTab === 'linux'
-                ? 'bg-gray-900 border-gray-700 text-blue-400 border-b-transparent shadow-sm'
-                : 'border-transparent text-gray-400 hover:text-gray-200 hover:bg-gray-800/40'
-            }`}
+            className={`flex items-center space-x-2 px-4 py-2.5 rounded-t-lg font-medium text-xs transition-all border-t border-l border-r ${activeTab === 'linux'
+              ? 'bg-gray-900 border-gray-700 text-blue-400 border-b-transparent shadow-sm'
+              : 'border-transparent text-gray-400 hover:text-gray-200 hover:bg-gray-800/40'
+              }`}
           >
             <span>🐧</span>
             <span>Linux / Kali Linux / Debian</span>
@@ -279,11 +256,10 @@ sudo /opt/soc-monitor-agent/soc-agent --config /etc/soc-monitor-agent/agent.yml 
           <button
             type="button"
             onClick={() => { setActiveTab('wsl'); generateToken('wsl'); }}
-            className={`flex items-center space-x-2 px-4 py-2.5 rounded-t-lg font-medium text-xs transition-all border-t border-l border-r ${
-              activeTab === 'wsl'
-                ? 'bg-gray-900 border-gray-700 text-purple-400 border-b-transparent shadow-sm'
-                : 'border-transparent text-gray-400 hover:text-gray-200 hover:bg-gray-800/40'
-            }`}
+            className={`flex items-center space-x-2 px-4 py-2.5 rounded-t-lg font-medium text-xs transition-all border-t border-l border-r ${activeTab === 'wsl'
+              ? 'bg-gray-900 border-gray-700 text-purple-400 border-b-transparent shadow-sm'
+              : 'border-transparent text-gray-400 hover:text-gray-200 hover:bg-gray-800/40'
+              }`}
           >
             <span>💻</span>
             <span>WSL (Windows Subsystem)</span>
@@ -311,11 +287,10 @@ sudo /opt/soc-monitor-agent/soc-agent --config /etc/soc-monitor-agent/agent.yml 
                   <button
                     type="button"
                     onClick={() => setCollectorHost('127.0.0.1')}
-                    className={`px-1.5 py-0.5 text-[10px] rounded border transition-colors ${
-                      collectorHost === '127.0.0.1'
-                        ? 'bg-blue-900/60 text-blue-300 border-blue-600'
-                        : 'bg-gray-850 text-gray-400 border-gray-750 hover:text-gray-200'
-                    }`}
+                    className={`px-1.5 py-0.5 text-[10px] rounded border transition-colors ${collectorHost === '127.0.0.1'
+                      ? 'bg-blue-900/60 text-blue-300 border-blue-600'
+                      : 'bg-gray-850 text-gray-400 border-gray-750 hover:text-gray-200'
+                      }`}
                     title="For Windows agent installed on this host"
                   >
                     127.0.0.1 (Local)
@@ -323,11 +298,10 @@ sudo /opt/soc-monitor-agent/soc-agent --config /etc/soc-monitor-agent/agent.yml 
                   <button
                     type="button"
                     onClick={() => setCollectorHost('192.168.56.1')}
-                    className={`px-1.5 py-0.5 text-[10px] rounded border transition-colors ${
-                      collectorHost === '192.168.56.1'
-                        ? 'bg-blue-900/60 text-blue-300 border-blue-600'
-                        : 'bg-gray-850 text-gray-400 border-gray-750 hover:text-gray-200'
-                    }`}
+                    className={`px-1.5 py-0.5 text-[10px] rounded border transition-colors ${collectorHost === '192.168.56.1'
+                      ? 'bg-blue-900/60 text-blue-300 border-blue-600'
+                      : 'bg-gray-850 text-gray-400 border-gray-750 hover:text-gray-200'
+                      }`}
                     title="For VirtualBox Kali guest VM connecting to Windows host"
                   >
                     192.168.56.1 (VBox)
@@ -414,50 +388,28 @@ sudo /opt/soc-monitor-agent/soc-agent --config /etc/soc-monitor-agent/agent.yml 
               <div className="p-3 bg-blue-950/30 border border-blue-600/30 rounded-lg text-xs text-blue-200 space-y-1">
                 <div className="font-semibold text-blue-300 flex items-center space-x-1.5">
                   <span>ℹ️</span>
-                  <span>Windows 10 / 11 / Server Service Installation</span>
+                  <span>Windows 10 / 11 / Server Service Installation (Admin Required)</span>
                 </div>
                 <p className="text-gray-300 text-[11px] leading-relaxed">
-                  Installs as a resilient native Windows service (<code className="text-white font-mono bg-black/50 px-1 py-0.5 rounded">SOCMonitorAgent</code>) configured for <strong>Automatic startup on boot</strong>. Collects Windows Event Logs (<code className="text-white font-mono">Security</code>, <code className="text-white font-mono">System</code>, <code className="text-white font-mono">Sysmon</code>) and system metrics.
+                  Downloads the release package from the collector, cryptographically verifies its <strong>SHA-256</strong> checksum, and installs as a resilient native Windows service (<code className="text-white font-mono bg-black/50 px-1 py-0.5 rounded">SOCMonitorAgent</code>) configured for <strong>Automatic startup on boot</strong>. Collects Windows Event Logs (<code className="text-white font-mono">Security</code>, <code className="text-white font-mono">System</code>, <code className="text-white font-mono">Sysmon</code>) and system metrics.
                 </p>
               </div>
 
-              {/* Recommended Quick Install */}
+              {/* Option B: Automated Install */}
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-xs font-semibold text-gray-300 uppercase tracking-wider">
-                    Option A — Interactive One-Liner (Hidden Token Prompt)
+                    Step 1 - Automated Install (Administrator PowerShell)
                   </span>
-                  <span className="text-[10px] text-emerald-400 bg-emerald-950/60 border border-emerald-800 px-1.5 py-0.2 rounded">
-                    Recommended • Secure
+                  <span className="text-[10px] text-emerald-400 bg-emerald-950/60 border border-emerald-800 px-1.5 py-0.2 rounded font-medium">
+                    Verified • SHA-256 Validated
                   </span>
                 </div>
                 <p className="text-[11px] text-gray-400 mb-1.5">
-                  Paste into Administrator PowerShell. Prompts for your enrollment token secretly without saving credentials in PowerShell command history.
+                  Paste into an <strong>Administrator PowerShell</strong> console. Automatically utilizes the one-time enrollment token, downloads the full package, verifies integrity, and starts the service:
                 </p>
-                <CopyAllButton fullText={winInteractiveOneLiner} label="Interactive One-Liner" />
-                <CodeBlock code={winInteractiveOneLiner} label="PowerShell (Admin) - Interactive" />
-              </div>
-
-              {/* Automated Silent Install */}
-              <div>
-                <span className="text-xs font-semibold text-gray-300 uppercase tracking-wider">
-                  Option B — Automated Install (Pre-injected Token)
-                </span>
-                <p className="text-[11px] text-gray-400 mb-1.5">
-                  Installs and enrolls in a single step using the current token:
-                </p>
-                <CodeBlock code={winSilentOneLiner} label="PowerShell (Admin) - Silent" />
-              </div>
-
-              {/* Direct Script Run */}
-              <div>
-                <span className="text-xs font-semibold text-gray-300 uppercase tracking-wider">
-                  Option C — Direct Script Run (In-Script Hidden Prompt)
-                </span>
-                <p className="text-[11px] text-gray-400 mb-1.5">
-                  Downloads and executes the installer; script prompts secretly with masked input if AGENTAUTHTOKEN is not set:
-                </p>
-                <CodeBlock code={winDirectInstallCmd} label="PowerShell (Admin) - Direct Run" />
+                <CopyAllButton fullText={winInstallCmd} label="Automated Windows Install Command" />
+                <CodeBlock code={winInstallCmd} label="PowerShell (Admin) - Automated Install" />
               </div>
 
               {/* Verification & Status */}
@@ -477,9 +429,9 @@ sudo /opt/soc-monitor-agent/soc-agent --config /etc/soc-monitor-agent/agent.yml 
                   <span className="text-[10px] text-gray-400 font-mono">uninstall-agent.ps1</span>
                 </div>
                 <p className="text-[11px] text-gray-400 mt-1">
-                  The uninstaller is packaged directly with the agent. It stops the service and cleans up. By default, host identity is preserved; use <code className="text-gray-300 font-mono">-FullCleanup</code> for a complete wipe.
+                  Stops and removes the Windows service and runtime dependencies. By default, local identity (<code className="text-gray-300 font-mono">agent_id.txt</code>) and configuration are preserved; pass <code className="text-gray-300 font-mono">-FullCleanup</code> for a complete wipe.
                 </p>
-                <CodeBlock code={winUninstallCmd} label="PowerShell - Uninstaller" />
+                <CodeBlock code={winUninstallCmd} label="PowerShell (Admin) - Uninstaller" />
               </div>
             </div>
           )}
@@ -490,50 +442,28 @@ sudo /opt/soc-monitor-agent/soc-agent --config /etc/soc-monitor-agent/agent.yml 
               <div className="p-3 bg-blue-950/30 border border-blue-600/30 rounded-lg text-xs text-blue-200 space-y-1">
                 <div className="font-semibold text-blue-300 flex items-center space-x-1.5">
                   <span>ℹ️</span>
-                  <span>Native Linux / Kali Linux / Debian Systemd Service</span>
+                  <span>Native Linux / Kali Linux / Debian Systemd Service (Root Required)</span>
                 </div>
                 <p className="text-gray-300 text-[11px] leading-relaxed">
-                  Installs Debian package (<code className="text-white font-mono bg-black/50 px-1 py-0.5 rounded">soc-monitor-agent.deb</code>) and registers <code className="text-white font-mono bg-black/50 px-1 py-0.5 rounded">soc-agent.service</code> with <strong>systemd boot persistence</strong>. Auto-detects <strong>systemd-journald</strong> for Kali 2023+ and streams all kernel, authentication, and system events.
+                  Downloads Debian package (<code className="text-white font-mono bg-black/50 px-1 py-0.5 rounded">soc-monitor-agent.deb</code>), cryptographically verifies its <strong>SHA-256</strong> checksum, and registers <code className="text-white font-mono bg-black/50 px-1 py-0.5 rounded">soc-agent.service</code> with <strong>systemd boot persistence</strong>. Auto-detects <strong>systemd-journald</strong> for Kali 2023+ and streams all kernel, authentication, and system events.
                 </p>
               </div>
 
-              {/* Option A: Interactive One-Liner */}
+              {/* Option B: Automated Install */}
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-xs font-semibold text-gray-300 uppercase tracking-wider">
-                    Option A — Interactive One-Liner (Hidden Token Prompt)
+                    Step 1 — Automated Install (Root / Sudo Terminal)
                   </span>
-                  <span className="text-[10px] text-emerald-400 bg-emerald-950/60 border border-emerald-800 px-1.5 py-0.2 rounded">
-                    Recommended • Secure
+                  <span className="text-[10px] text-emerald-400 bg-emerald-950/60 border border-emerald-800 px-1.5 py-0.2 rounded font-medium">
+                    Verified • SHA-256 Validated
                   </span>
                 </div>
                 <p className="text-[11px] text-gray-400 mb-1.5">
-                  Run in your Kali terminal. Prompts secretly for the token without logging to bash history, verifies packages, and starts the systemd service.
+                  Run in your terminal. Automatically utilizes the one-time enrollment token, downloads the deb package, verifies integrity via SHA-256, and starts the systemd service:
                 </p>
-                <CopyAllButton fullText={linuxInteractiveOneLiner} label="Interactive Linux One-Liner" />
-                <CodeBlock code={linuxInteractiveOneLiner} label="Kali / Linux Bash - Interactive" />
-              </div>
-
-              {/* Option B: Silent Install */}
-              <div>
-                <span className="text-xs font-semibold text-gray-300 uppercase tracking-wider">
-                  Option B — Automated Silent Install
-                </span>
-                <p className="text-[11px] text-gray-400 mb-1.5">
-                  Downloads and enrolls immediately with the generated token:
-                </p>
-                <CodeBlock code={linuxSilentOneLiner} label="Kali / Linux Bash - Silent" />
-              </div>
-
-              {/* Option C: Direct Script Run */}
-              <div>
-                <span className="text-xs font-semibold text-gray-300 uppercase tracking-wider">
-                  Option C — Direct Script Run (In-Script Hidden Prompt)
-                </span>
-                <p className="text-[11px] text-gray-400 mb-1.5">
-                  Downloads and executes the installer; script prompts secretly without echoing if AGENTAUTHTOKEN is not set:
-                </p>
-                <CodeBlock code={linuxDirectInstallCmd} label="Kali / Linux Bash - Direct Run" />
+                <CopyAllButton fullText={linuxInstallCmd} label="Automated Linux Install Command" />
+                <CodeBlock code={linuxInstallCmd} label="Kali / Linux Bash - Automated Install" />
               </div>
 
               {/* Verification */}
@@ -553,9 +483,9 @@ sudo /opt/soc-monitor-agent/soc-agent --config /etc/soc-monitor-agent/agent.yml 
                   <span className="text-[10px] text-gray-400 font-mono">uninstall-agent.sh</span>
                 </div>
                 <p className="text-[11px] text-gray-400 mt-1">
-                  The uninstaller is deployed to <code className="text-gray-300 font-mono">/opt/soc-monitor-agent/uninstall-agent.sh</code>. Stops and disables systemd service, removing packages cleanly.
+                  Stops and disables the systemd service, removing packages cleanly while preserving host identity by default.
                 </p>
-                <CodeBlock code={linuxUninstallCmd} label="Bash - Uninstaller" />
+                <CodeBlock code={linuxUninstallCmd} label="Bash (Root) - Uninstaller" />
               </div>
             </div>
           )}
@@ -587,17 +517,17 @@ sudo /opt/soc-monitor-agent/soc-agent --config /etc/soc-monitor-agent/agent.yml 
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-xs font-semibold text-gray-300 uppercase tracking-wider">
-                    Step 1 — Install inside WSL Terminal (Hidden Token Prompt)
+                    Step 1 — Automated Install (WSL Terminal)
                   </span>
-                  <span className="text-[10px] text-emerald-400 bg-emerald-950/60 border border-emerald-800 px-1.5 py-0.2 rounded">
-                    Recommended • Secure
+                  <span className="text-[10px] text-emerald-400 bg-emerald-950/60 border border-emerald-800 px-1.5 py-0.2 rounded font-medium">
+                    Verified • SHA-256 Validated
                   </span>
                 </div>
                 <p className="text-[11px] text-gray-400 mb-1.5">
-                  Execute in your WSL distro terminal. Passes the enrollment token securely via AGENTAUTHTOKEN without recording credentials in bash history:
+                  Execute in your WSL distro terminal. Automatically utilizes the one-time enrollment token, downloads the deb package, verifies integrity, and starts the agent:
                 </p>
-                <CopyAllButton fullText={wslInteractiveOneLiner} label="WSL One-Liner" />
-                <CodeBlock code={wslInteractiveOneLiner} label="WSL Bash - Installer" />
+                <CopyAllButton fullText={wslInstallCmd} label="WSL Install Command" />
+                <CodeBlock code={wslInstallCmd} label="WSL Bash - Automated Install" />
               </div>
 
               <div>
@@ -614,7 +544,7 @@ sudo /opt/soc-monitor-agent/soc-agent --config /etc/soc-monitor-agent/agent.yml 
                 <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
                   Uninstallation in WSL
                 </span>
-                <CodeBlock code="sudo /opt/soc-monitor-agent/uninstall-agent.sh" label="WSL Bash - Uninstaller" />
+                <CodeBlock code={wslUninstallCmd} label="WSL Bash - Uninstaller" />
               </div>
             </div>
           )}

@@ -1,9 +1,17 @@
 param (
+    [Alias("Host", "Collector")]
     [string]$CollectorHost = "127.0.0.1",
+
+    [Alias("Port")]
     [int]$CollectorPort = 5000,
+
+    [Alias("Token", "EnrollmentToken")]
     [string]$AuthToken = "",
-    [switch]$Repair = $false,
-    [string]$DownloadUrl = ""
+
+    [Alias("Url", "CollectorUrl")]
+    [string]$DownloadUrl = "",
+
+    [switch]$Repair = $false
 )
 
 $ErrorActionPreference = "Stop"
@@ -76,19 +84,74 @@ if ([string]::IsNullOrWhiteSpace($AuthToken)) {
 
 # 3. Locate or download package relative to script directory
 $SourceDir = $PSScriptRoot
-if (-not $SourceDir) { $SourceDir = Get-Location }
+if (-not $SourceDir) { $SourceDir = (Get-Location).Path }
 
-# Optional remote download mode if invoked from bootstrap one-liner
-if ($DownloadUrl -and (-not (Test-Path (Join-Path $SourceDir "soc-agent-windows.exe")))) {
-    Write-Host "Downloading release package from $DownloadUrl..." -ForegroundColor Cyan
-    $tempZip = Join-Path $env:TEMP "soc-agent-windows-$([Guid]::NewGuid().ToString('N')).zip"
-    Invoke-WebRequest -Uri $DownloadUrl -OutFile $tempZip -UseBasicParsing
-    $tempExtract = Join-Path $env:TEMP "soc-agent-extract-$([Guid]::NewGuid().ToString('N'))"
-    Expand-Archive -Path $tempZip -DestinationPath $tempExtract -Force
-    $SourceDir = $tempExtract
+# Hardcoded trusted expected SHA-256 for official release package
+$ExpectedPackageSha256 = "C212C37E482276871A1F4A1EA51EAB237535CE62C98AB5E8D997A3628C407C66"
+
+# Track temporary files/folders for cleanup in finally block
+$script:TempPackageZip = $null
+$script:TempExtractDir = $null
+
+# Check if local package already has the executable
+$hasLocalExe = (Test-Path (Join-Path $SourceDir "soc-agent-windows.exe")) -or
+               (Test-Path (Join-Path $SourceDir "soc-agent-windows\soc-agent-windows.exe")) -or
+               (Test-Path (Join-Path $SourceDir "..\dist\soc-agent-windows.exe"))
+
+# If local executable is absent, download from DownloadUrl or default collector endpoint
+if (-not $hasLocalExe) {
+    if (-not $DownloadUrl) {
+        $DownloadUrl = "http://${CollectorHost}:${CollectorPort}/api/v1/agents/download/windows"
+    } else {
+        # If user passed a base collector URL like http://192.168.56.1:5000, parse host and port
+        if ($DownloadUrl -match '^https?://([^:/]+)(?::(\d+))?(.*)$') {
+            $parsedHost = $matches[1]
+            if ($matches[2]) { $CollectorPort = [int]$matches[2] }
+            if ($parsedHost -and $CollectorHost -eq "127.0.0.1") { $CollectorHost = $parsedHost }
+            if (-not $matches[3] -or $matches[3] -eq "/") {
+                $DownloadUrl = "http://${CollectorHost}:${CollectorPort}/api/v1/agents/download/windows"
+            }
+        }
+    }
+
+    Write-Host "Local binary not found. Downloading agent package from $DownloadUrl..." -ForegroundColor Cyan
+    $guidStr = [Guid]::NewGuid().ToString('N')
+    $script:TempPackageZip = Join-Path $env:TEMP "soc-agent-windows-$guidStr.zip"
+    $script:TempExtractDir = Join-Path $env:TEMP "soc-agent-extract-$guidStr"
+
+    try {
+        Invoke-WebRequest -Uri $DownloadUrl -OutFile $script:TempPackageZip -UseBasicParsing
+    } catch {
+        Write-Error "Failed to download agent package from '$DownloadUrl': $_"
+        exit 1
+    }
+
+    if (-not (Test-Path $script:TempPackageZip)) {
+        Write-Error "Downloaded package file '$script:TempPackageZip' not found."
+        exit 1
+    }
+
+    # Verify SHA-256 checksum of downloaded package before extraction or execution
+    Write-Host "Verifying package integrity (SHA-256)..." -ForegroundColor Cyan
+    $actualSha256 = (Get-FileHash -Path $script:TempPackageZip -Algorithm SHA256).Hash.ToUpper()
+    if ($actualSha256 -ne $ExpectedPackageSha256) {
+        Write-Error "Package integrity verification failed! Expected SHA-256: $ExpectedPackageSha256, Actual: $actualSha256. Aborting installation."
+        exit 1
+    }
+    Write-Host "Package integrity verified (SHA-256: $actualSha256)." -ForegroundColor Green
+
+    Write-Host "Extracting agent package..." -ForegroundColor Cyan
+    try {
+        Expand-Archive -Path $script:TempPackageZip -DestinationPath $script:TempExtractDir -Force
+    } catch {
+        Write-Error "Failed to extract package archive '$script:TempPackageZip': $_"
+        exit 1
+    }
+
+    $SourceDir = $script:TempExtractDir
 }
 
-# Check relative package paths
+# Resolve relative package paths
 if (-not (Test-Path (Join-Path $SourceDir "soc-agent-windows.exe"))) {
     if (Test-Path (Join-Path $SourceDir "soc-agent-windows\soc-agent-windows.exe")) {
         $SourceDir = Join-Path $SourceDir "soc-agent-windows"
@@ -189,14 +252,80 @@ windows:
     Write-Host "Configuration saved atomically to $ConfigPath." -ForegroundColor Green
 }
 
-# Copy uninstaller script to installed directory
-$SourceUninstaller = Join-Path $PSScriptRoot "uninstall-agent.ps1"
+# Copy or deploy uninstaller script to installed directory
+$SourceUninstaller = Join-Path $SourceDir "uninstall-agent.ps1"
+if (-not (Test-Path $SourceUninstaller)) {
+    $SourceUninstaller = Join-Path $SourceDir "Uninstall-SOCAgent.ps1"
+}
+if (-not (Test-Path $SourceUninstaller)) {
+    $SourceUninstaller = Join-Path $PSScriptRoot "uninstall-agent.ps1"
+}
 if (-not (Test-Path $SourceUninstaller)) {
     $SourceUninstaller = Join-Path $PSScriptRoot "Uninstall-SOCAgent.ps1"
 }
 if (Test-Path $SourceUninstaller) {
     Copy-Item -Path $SourceUninstaller -Destination $InstalledUninstaller -Force
     Write-Host "Uninstaller stored at $InstalledUninstaller." -ForegroundColor Green
+} else {
+    # Generate standalone uninstaller directly if missing from extraction tree
+    $uninstallerScript = @'
+param (
+    [switch]$FullCleanup = $false,
+    [switch]$Force = $false
+)
+
+$ErrorActionPreference = "Stop"
+$ServiceName = "SOCMonitorAgent"
+$ProgramDataPath = Join-Path $env:PROGRAMDATA "SOCMonitorAgent"
+$ExecutablePath = Join-Path $ProgramDataPath "soc-agent-windows.exe"
+
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $isAdmin) {
+    Write-Error "Administrator privileges required. Please run PowerShell as Administrator."
+    exit 1
+}
+
+$svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+if ($svc) {
+    if ($svc.Status -eq 'Running') {
+        Stop-Service -Name $ServiceName -Force
+        Start-Sleep -Seconds 2
+    }
+    if (Test-Path $ExecutablePath) {
+        & $ExecutablePath remove | Out-Null
+    } else {
+        & sc.exe delete $ServiceName | Out-Null
+    }
+    Start-Sleep -Seconds 2
+}
+
+if (Test-Path $ExecutablePath) {
+    Remove-Item -Path $ExecutablePath -Force -ErrorAction SilentlyContinue
+}
+$internalDir = Join-Path $ProgramDataPath "_internal"
+if (Test-Path $internalDir) {
+    Remove-Item -Path $internalDir -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+if ($FullCleanup) {
+    if (-not $Force) {
+        Write-Warning "CAUTION: Full cleanup will permanently delete local agent identity (agent_id.txt), config, and event buffers."
+        $confirm = Read-Host "Are you sure you want to perform a FULL cleanup? (yes/NO)"
+        if ($confirm -ne "yes") {
+            Write-Host "Preserving local state and configuration directory." -ForegroundColor Green
+            exit 0
+        }
+    }
+    Remove-Item -Path $ProgramDataPath -Recurse -Force -ErrorAction SilentlyContinue
+    Write-Host "Full local cleanup completed." -ForegroundColor Green
+} else {
+    Write-Host "Note: Agent configuration, persistent identity, and state in '$ProgramDataPath' have been PRESERVED." -ForegroundColor Green
+    Write-Host "To remove local identity and state files completely, rerun with: .\uninstall-agent.ps1 -FullCleanup" -ForegroundColor Yellow
+}
+Write-Host "Uninstall complete." -ForegroundColor Green
+'@
+    [System.IO.File]::WriteAllText($InstalledUninstaller, $uninstallerScript, [System.Text.Encoding]::UTF8)
+    Write-Host "Uninstaller generated at $InstalledUninstaller." -ForegroundColor Green
 }
 
 # 8. Service registration and automatic startup
@@ -210,7 +339,11 @@ try {
 
 # 9. Start service and verify running status
 Write-Host "Starting $ServiceName..." -ForegroundColor Cyan
-Start-Service -Name $ServiceName
+try {
+    Start-Service -Name $ServiceName -ErrorAction Stop
+} catch {
+    Write-Warning "Start-Service encountered an error: $_"
+}
 
 $timeout = 15
 $running = $false
@@ -229,11 +362,14 @@ if (-not $running) {
     exit 1
 }
 
-# Verify enrollment registration in agent.log if available
+# Verify enrollment registration in service.log if available
 Start-Sleep -Seconds 2
+$ServiceLogPath = Join-Path $ProgramDataPath "service.log"
 $AgentLogPath = Join-Path $ProgramDataPath "agent.log"
-if (Test-Path $AgentLogPath) {
-    $recentLog = Get-Content -Tail 25 -Path $AgentLogPath -ErrorAction SilentlyContinue | Out-String
+$LogPathToCheck = if (Test-Path $ServiceLogPath) { $ServiceLogPath } elseif (Test-Path $AgentLogPath) { $AgentLogPath } else { $null }
+
+if ($LogPathToCheck) {
+    $recentLog = Get-Content -Tail 25 -Path $LogPathToCheck -ErrorAction SilentlyContinue | Out-String
     if ($recentLog -match "Invalid or expired enrollment code|401 Client Error|registration rejected") {
         Cleanup-TokenEnvironment
         Write-Error "Enrollment failed: The server rejected the enrollment token as invalid or expired. Enrollment tokens are single-use and expire after 24 hours. Please generate a fresh token from the SOC Monitor dashboard."
@@ -251,4 +387,12 @@ Write-Host "============================================================" -Foreg
 finally {
     Cleanup-TokenEnvironment
     $AuthToken = $null
+
+    # Clean up temporary downloaded archive and extracted files (if created)
+    if ($script:TempPackageZip -and (Test-Path $script:TempPackageZip)) {
+        Remove-Item -Path $script:TempPackageZip -Force -ErrorAction SilentlyContinue
+    }
+    if ($script:TempExtractDir -and (Test-Path $script:TempExtractDir)) {
+        Remove-Item -Path $script:TempExtractDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }

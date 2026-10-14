@@ -31,6 +31,19 @@ def test_windows_installer_token_handling():
     # 5. Service name and config
     assert "SOCMonitorAgent" in content, "Must use correct service name SOCMonitorAgent"
 
+    # 6. Auto-download fallback and SHA-256 integrity verification
+    assert "ExpectedPackageSha256" in content, "Must declare expected SHA-256 package hash"
+    assert "C212C37E482276871A1F4A1EA51EAB237535CE62C98AB5E8D997A3628C407C66" in content, "Must verify against official release hash"
+    assert "Get-FileHash" in content, "Must compute actual hash via Get-FileHash"
+    assert "Package integrity verification failed" in content, "Must reject hash mismatch"
+    assert "Expand-Archive" in content, "Must extract package archive"
+
+    # 7. Safe temporary directory and file cleanup in finally block
+    assert "TempPackageZip" in content, "Must track temporary package ZIP"
+    assert "TempExtractDir" in content, "Must track temporary extraction directory"
+    assert "Remove-Item -Path $script:TempPackageZip" in content, "Must clean up temporary zip in finally"
+    assert "Remove-Item -Path $script:TempExtractDir" in content, "Must clean up temporary extraction dir in finally"
+
 def test_linux_installer_token_handling():
     sh_path = os.path.join(ARTIFACTS_DIR, "install-agent.sh")
     assert os.path.exists(sh_path), "install-agent.sh must exist"
@@ -71,12 +84,13 @@ def test_add_endpoint_modal_width_and_commands():
     assert "max-h-[90vh]" in content, "Modal must fit viewport height with internal scroll"
     
     # 2. Windows command uses $env:AGENTAUTHTOKEN and finally block cleanup
-    assert "$env:AGENTAUTHTOKEN = Read-Host" in content, "Windows one-liner must use $env:AGENTAUTHTOKEN with Read-Host"
+    assert '$env:AGENTAUTHTOKEN = "${code}"' in content, "Windows one-liner must inject current enrollment token into $env:AGENTAUTHTOKEN"
     assert "Remove-Item Env:AGENTAUTHTOKEN" in content, "Windows one-liner must clean up environment variable"
+    assert "Read-Host" not in content, "Must not prompt user with Read-Host"
     
-    # 3. Linux command uses AGENTAUTHTOKEN and unset
-    assert 'AGENTAUTHTOKEN' in content, "Linux command must use AGENTAUTHTOKEN"
-    assert 'unset AGENTAUTHTOKEN' in content, "Linux command must unset AGENTAUTHTOKEN"
+    # 3. Linux command uses AGENTAUTHTOKEN and does not prompt
+    assert 'AGENTAUTHTOKEN="${code}"' in content, "Linux command must inject current enrollment token into AGENTAUTHTOKEN"
+    assert "read -rsp" not in content, "Linux command must not prompt user with read -rsp"
     
     # 4. WSL scope distinction documented
     assert "Native Windows Host" in content, "WSL tab must document Native Windows Host monitoring"

@@ -21,6 +21,7 @@ def main():
     parser = argparse.ArgumentParser(description="SOC Monitoring Agent (Phase 3B)")
     parser.add_argument("-c", "--config", default="agent.yml", help="Path to configuration file")
     parser.add_argument("--test-event", action="store_true", help="Send a synthetic test event and exit")
+    parser.add_argument("--health", action="store_true", help="Perform health check and output diagnostic JSON")
     args = parser.parse_args()
 
     logger.info("Starting SOC Agent...")
@@ -39,6 +40,27 @@ def main():
     buffer_path = os.path.join(config.state_dir, "event-buffer.jsonl")
     buffer = EventBuffer(max_size=config.buffer_max_events, persistence_path=buffer_path)
     transport = Transport(config, identity, buffer)
+
+    if args.health:
+        # Check collector registration, heartbeat, and buffer status
+        transport.register(max_retries=1)
+        if transport.registered:
+            transport.send_heartbeat()
+        health_data = transport.check_health()
+        # Persist to state directory if possible
+        try:
+            os.makedirs(config.state_dir, exist_ok=True)
+            health_file = os.path.join(config.state_dir, "health.json")
+            temp_file = health_file + f".tmp-{os.getpid()}"
+            import json
+            with open(temp_file, "w", encoding="utf-8") as f:
+                json.dump(health_data, f, indent=2)
+            os.replace(temp_file, health_file)
+        except Exception as e:
+            logger.warning(f"Could not persist health.json in state dir: {e}")
+        import json
+        print(json.dumps(health_data, indent=2))
+        sys.exit(0 if health_data["overall_status"] == "HEALTHY" else 1)
     
     logger.info("Registering with collector...")
     # Will block/retry indefinitely until collector is reachable

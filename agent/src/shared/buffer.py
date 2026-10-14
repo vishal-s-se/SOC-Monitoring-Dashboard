@@ -13,6 +13,7 @@ class EventBuffer:
         self.max_size = max_size
         self.persistence_path = persistence_path
         self.buffer = collections.deque(maxlen=max_size)
+        self.discarded_count = 0
         self._load()
 
     def add(self, event):
@@ -20,7 +21,10 @@ class EventBuffer:
         was_full = len(self.buffer) == self.max_size
         self.buffer.append(event)
         if was_full:
-            logger.warning("Event buffer full; oldest event was discarded")
+            self.discarded_count += 1
+            logger.warning(
+                f"Event buffer capacity ({self.max_size}) exceeded; oldest event discarded. Total discarded: {self.discarded_count}"
+            )
         self._persist()
 
     def get_all(self):
@@ -45,6 +49,15 @@ class EventBuffer:
     def is_empty(self):
         """Return True if the buffer is empty."""
         return len(self.buffer) == 0
+
+    def get_stats(self):
+        """Return buffer telemetry: current size, max size, and total discarded events."""
+        return {
+            "size": len(self.buffer),
+            "max_size": self.max_size,
+            "discarded_count": self.discarded_count,
+            "is_full": len(self.buffer) >= self.max_size
+        }
 
     def _load(self):
         if not self.persistence_path or not os.path.exists(self.persistence_path):

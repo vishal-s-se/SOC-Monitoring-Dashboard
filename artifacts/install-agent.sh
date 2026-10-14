@@ -93,22 +93,40 @@ if [ -z "$AUTH_TOKEN" ]; then
     exit 1
 fi
 
-# 5. Check package availability
+# 5. Check package availability and verify integrity
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEB_PKG=""
+TEMP_DOWNLOADED_DEB=""
+EXPECTED_DEB_SHA256="9E6170886401CD60459CC21B84EC922BC5D363927306933F051BDC967077349E"
+
+cleanup_temp() {
+    cleanup
+    if [ -n "$TEMP_DOWNLOADED_DEB" ] && [ -f "$TEMP_DOWNLOADED_DEB" ]; then
+        rm -f "$TEMP_DOWNLOADED_DEB" 2>/dev/null || true
+    fi
+}
+trap cleanup_temp EXIT INT TERM
 
 if [ -f "$SCRIPT_DIR/soc-monitor-agent_0.1.0_amd64.deb" ]; then
     DEB_PKG="$SCRIPT_DIR/soc-monitor-agent_0.1.0_amd64.deb"
-elif [ -f "/tmp/soc-monitor-agent_0.1.0_amd64.deb" ]; then
-    DEB_PKG="/tmp/soc-monitor-agent_0.1.0_amd64.deb"
 else
     echo -e "\033[1;34mDownloading agent package from collector (http://${COLLECTOR_HOST}:${COLLECTOR_PORT}/api/v1/agents/download/linux)...\033[0m"
-    DEB_PKG="/tmp/soc-monitor-agent_0.1.0_amd64.deb"
-    if ! curl -sSL "http://${COLLECTOR_HOST}:${COLLECTOR_PORT}/api/v1/agents/download/linux" -o "$DEB_PKG"; then
+    TEMP_DOWNLOADED_DEB="/tmp/soc-monitor-agent_0.1.0_amd64_$$.deb"
+    if ! curl -fsSL "http://${COLLECTOR_HOST}:${COLLECTOR_PORT}/api/v1/agents/download/linux" -o "$TEMP_DOWNLOADED_DEB"; then
         echo -e "\033[1;31mError: Failed to download agent package from http://${COLLECTOR_HOST}:${COLLECTOR_PORT}/api/v1/agents/download/linux\033[0m" >&2
         exit 1
     fi
+    DEB_PKG="$TEMP_DOWNLOADED_DEB"
 fi
+
+# Verify package SHA-256 checksum
+echo -e "\033[1;34mVerifying package integrity (SHA-256)...\033[0m"
+ACTUAL_SHA256=$(sha256sum "$DEB_PKG" | awk '{print toupper($1)}')
+if [ "$ACTUAL_SHA256" != "$EXPECTED_DEB_SHA256" ]; then
+    echo -e "\033[1;31mError: Package integrity verification failed! Expected SHA-256: $EXPECTED_DEB_SHA256, Actual: $ACTUAL_SHA256. Aborting installation.\033[0m" >&2
+    exit 1
+fi
+echo -e "\033[1;32mPackage integrity verified (SHA-256: $ACTUAL_SHA256).\033[0m"
 
 echo -e "\033[1;32mPackage found at '$DEB_PKG'. Installing via dpkg...\033[0m"
 dpkg -i "$DEB_PKG" || apt-get install -f -y

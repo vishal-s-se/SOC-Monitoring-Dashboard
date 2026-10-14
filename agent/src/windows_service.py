@@ -92,11 +92,38 @@ class SOCAgentService(win32serviceutil.ServiceFramework):
             
             logger.info("Service loop running")
             
+            def _persist_health():
+                try:
+                    import json
+                    os.makedirs(config.state_dir, exist_ok=True)
+                    health_file = os.path.join(config.state_dir, "health.json")
+                    health_data = transport.check_health()
+                    health_data["collector_channels"] = {
+                        "active": [c for c in foundation.collector.channels if c not in foundation.collector.unavailable_channels],
+                        "unavailable_skipped": list(foundation.collector.unavailable_channels)
+                    }
+                    temp_health = health_file + f".tmp-{os.getpid()}"
+                    with open(temp_health, "w", encoding="utf-8") as hf:
+                        json.dump(health_data, hf, indent=2)
+                    os.replace(temp_health, health_file)
+                except Exception as he:
+                    logger.warning(f"Failed to persist health.json: {he}")
+
+            # Write initial health state on startup
+            _persist_health()
+            last_health_write = time.time()
+
             while self.is_running:
                 # Wait for stop event or timeout
                 rc = win32event.WaitForSingleObject(self.hWaitStop, 1000)
                 if rc == win32event.WAIT_OBJECT_0:
                     break
+
+                # Write live health diagnostics to state/health.json every 30 seconds
+                now = time.time()
+                if now - last_health_write >= 30:
+                    last_health_write = now
+                    _persist_health()
 
             logger.info("Service loop exiting")
             heartbeat_thread.stop()
